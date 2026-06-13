@@ -18,6 +18,7 @@ const {
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
+const isDrawing = ref(false)
 
 const canvasWidth = 400
 const canvasHeight = 500
@@ -35,61 +36,14 @@ const getBangsPath = (bangsType: string): string => {
   }
 }
 
-const drawCanvas = () => {
-  const canvas = canvasRef.value
-  if (!canvas) return
-
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-
-  ctx.clearRect(0, 0, canvasWidth, canvasHeight)
-
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight)
-  gradient.addColorStop(0, '#FEF3F7')
-  gradient.addColorStop(1, '#FCE4EC')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight)
-
-  ctx.save()
-  ctx.beginPath()
-  ctx.ellipse(canvasWidth / 2, canvasHeight / 2 + 20, 150, 180, 0, 0, Math.PI * 2)
-  ctx.clip()
-
-  if (portraitImage.value) {
-    const img = new Image()
-    img.onload = () => {
-      const scale = Math.max(300 / img.width, 360 / img.height)
-      const w = img.width * scale
-      const h = img.height * scale
-      ctx.drawImage(
-        img,
-        (canvasWidth - w) / 2,
-        (canvasHeight - h) / 2,
-        w,
-        h
-      )
-      drawHairAndFace()
-    }
-    img.src = portraitImage.value
-  } else {
-    drawFaceShape(ctx)
-    drawHairAndFace()
-  }
-
-  ctx.restore()
-}
-
-const drawFaceShape = (ctx: CanvasRenderingContext2D) => {
-  const centerX = canvasWidth / 2
-  const centerY = canvasHeight / 2 + 20
-
+const drawFaceShapeOnCtx = (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, faceType: string) => {
   ctx.save()
   ctx.fillStyle = '#FFE0C2'
   ctx.strokeStyle = '#E8B896'
   ctx.lineWidth = 2
 
   ctx.beginPath()
-  switch (selectedFaceShape.value) {
+  switch (faceType) {
     case 'oval':
       ctx.ellipse(centerX, centerY, 85, 110, 0, 0, Math.PI * 2)
       break
@@ -97,7 +51,11 @@ const drawFaceShape = (ctx: CanvasRenderingContext2D) => {
       ctx.ellipse(centerX, centerY, 95, 95, 0, 0, Math.PI * 2)
       break
     case 'square':
-      ctx.roundRect(centerX - 85, centerY - 95, 170, 190, 25)
+      if (ctx.roundRect) {
+        ctx.roundRect(centerX - 85, centerY - 95, 170, 190, 25)
+      } else {
+        ctx.rect(centerX - 85, centerY - 95, 170, 190)
+      }
       break
     case 'long':
       ctx.ellipse(centerX, centerY, 70, 125, 0, 0, Math.PI * 2)
@@ -139,44 +97,244 @@ const drawFaceShape = (ctx: CanvasRenderingContext2D) => {
   ctx.restore()
 }
 
-const drawHairAndFace = () => {
-  const canvas = canvasRef.value
-  if (!canvas) return
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
+const drawHairOnCtx = (ctx: CanvasRenderingContext2D, hairstyle: any, hairColor: any, bangsType: string) => {
+  if (!hairstyle) return
+  const scale = 1.4
+  const offsetX = canvasWidth / 2 - 130 * scale + 30
+  const offsetY = 40
 
-  if (selectedHairstyle.value) {
-    const scale = 1.4
-    const offsetX = canvasWidth / 2 - 130 * scale + 30
-    const offsetY = 40
+  const hairGradient = ctx.createLinearGradient(0, offsetY, 0, offsetY + 300)
+  hairGradient.addColorStop(0, hairColor.secondaryColor)
+  hairGradient.addColorStop(1, hairColor.primaryColor)
 
-    const hairGradient = ctx.createLinearGradient(0, offsetY, 0, offsetY + 300)
-    hairGradient.addColorStop(0, selectedHairColor.value.secondaryColor)
-    hairGradient.addColorStop(1, selectedHairColor.value.primaryColor)
+  ctx.save()
+  ctx.fillStyle = hairGradient
+  ctx.strokeStyle = hairColor.primaryColor
+  ctx.lineWidth = 2
 
-    ctx.save()
-    ctx.fillStyle = hairGradient
-    ctx.strokeStyle = selectedHairColor.value.primaryColor
-    ctx.lineWidth = 2
+  const path = new Path2D(hairstyle.svgPath)
+  ctx.save()
+  ctx.translate(offsetX, offsetY)
+  ctx.scale(scale, scale)
+  ctx.fill(path)
+  ctx.stroke(path)
+  ctx.restore()
 
-    const path = new Path2D(selectedHairstyle.value.svgPath)
+  if (bangsType !== 'none') {
+    const bangsPath = new Path2D(getBangsPath(bangsType))
     ctx.save()
     ctx.translate(offsetX, offsetY)
     ctx.scale(scale, scale)
-    ctx.fill(path)
-    ctx.stroke(path)
+    ctx.fill(bangsPath)
     ctx.restore()
+  }
 
-    if (selectedBangs.value !== 'none') {
-      const bangsPath = new Path2D(getBangsPath(selectedBangs.value))
-      ctx.save()
-      ctx.translate(offsetX, offsetY)
-      ctx.scale(scale, scale)
-      ctx.fill(bangsPath)
-      ctx.restore()
+  ctx.restore()
+}
+
+const drawBackground = (ctx: CanvasRenderingContext2D) => {
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvasHeight)
+  gradient.addColorStop(0, '#FEF3F7')
+  gradient.addColorStop(1, '#FCE4EC')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+}
+
+const drawCanvas = () => {
+  const canvas = canvasRef.value
+  if (!canvas) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  isDrawing.value = true
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+  drawBackground(ctx)
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.ellipse(canvasWidth / 2, canvasHeight / 2 + 20, 150, 180, 0, 0, Math.PI * 2)
+  ctx.clip()
+
+  const finishDrawing = () => {
+    drawHairOnCtx(ctx, selectedHairstyle.value, selectedHairColor.value, selectedBangs.value)
+    ctx.restore()
+    isDrawing.value = false
+  }
+
+  if (portraitImage.value) {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const scale = Math.max(300 / img.width, 360 / img.height)
+      const w = img.width * scale
+      const h = img.height * scale
+      ctx.drawImage(
+        img,
+        (canvasWidth - w) / 2,
+        (canvasHeight - h) / 2,
+        w,
+        h
+      )
+      finishDrawing()
+    }
+    img.onerror = () => {
+      const centerX = canvasWidth / 2
+      const centerY = canvasHeight / 2 + 20
+      drawFaceShapeOnCtx(ctx, centerX, centerY, selectedFaceShape.value)
+      finishDrawing()
+    }
+    img.src = portraitImage.value
+  } else {
+    const centerX = canvasWidth / 2
+    const centerY = canvasHeight / 2 + 20
+    drawFaceShapeOnCtx(ctx, centerX, centerY, selectedFaceShape.value)
+    finishDrawing()
+  }
+}
+
+const getCanvasAsync = (): Promise<HTMLCanvasElement | null> => {
+  return new Promise((resolve) => {
+    const canvas = canvasRef.value
+    if (!canvas) {
+      resolve(null)
+      return
+    }
+    if (!isDrawing.value) {
+      resolve(canvas)
+      return
+    }
+    const checkInterval = setInterval(() => {
+      if (!isDrawing.value) {
+        clearInterval(checkInterval)
+        resolve(canvas)
+      }
+    }, 50)
+    setTimeout(() => {
+      clearInterval(checkInterval)
+      resolve(canvas)
+    }, 2000)
+  })
+}
+
+const getOriginalCanvas = (): Promise<HTMLCanvasElement | null> => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      resolve(null)
+      return
     }
 
-    ctx.restore()
+    drawBackground(ctx)
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.ellipse(canvasWidth / 2, canvasHeight / 2 + 20, 150, 180, 0, 0, Math.PI * 2)
+    ctx.clip()
+
+    const centerX = canvasWidth / 2
+    const centerY = canvasHeight / 2 + 20
+
+    const finish = () => {
+      ctx.restore()
+      resolve(canvas)
+    }
+
+    if (portraitImage.value) {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const scale = Math.max(300 / img.width, 360 / img.height)
+        const w = img.width * scale
+        const h = img.height * scale
+        ctx.drawImage(
+          img,
+          (canvasWidth - w) / 2,
+          (canvasHeight - h) / 2,
+          w,
+          h
+        )
+        finish()
+      }
+      img.onerror = () => {
+        drawFaceShapeOnCtx(ctx, centerX, centerY, selectedFaceShape.value)
+        finish()
+      }
+      img.src = portraitImage.value
+    } else {
+      drawFaceShapeOnCtx(ctx, centerX, centerY, selectedFaceShape.value)
+      finish()
+    }
+  })
+}
+
+const drawFullCanvas = (): Promise<HTMLCanvasElement | null> => {
+  return new Promise(async (resolve) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      resolve(null)
+      return
+    }
+
+    drawBackground(ctx)
+
+    ctx.save()
+    ctx.beginPath()
+    ctx.ellipse(canvasWidth / 2, canvasHeight / 2 + 20, 150, 180, 0, 0, Math.PI * 2)
+    ctx.clip()
+
+    const centerX = canvasWidth / 2
+    const centerY = canvasHeight / 2 + 20
+
+    const drawHair = () => {
+      drawHairOnCtx(ctx, selectedHairstyle.value, selectedHairColor.value, selectedBangs.value)
+      ctx.restore()
+      resolve(canvas)
+    }
+
+    if (portraitImage.value) {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const scale = Math.max(300 / img.width, 360 / img.height)
+        const w = img.width * scale
+        const h = img.height * scale
+        ctx.drawImage(
+          img,
+          (canvasWidth - w) / 2,
+          (canvasHeight - h) / 2,
+          w,
+          h
+        )
+        drawHair()
+      }
+      img.onerror = () => {
+        drawFaceShapeOnCtx(ctx, centerX, centerY, selectedFaceShape.value)
+        drawHair()
+      }
+      img.src = portraitImage.value
+    } else {
+      drawFaceShapeOnCtx(ctx, centerX, centerY, selectedFaceShape.value)
+      drawHair()
+    }
+  })
+}
+
+const getBothCanvases = async (): Promise<{ originalDataUrl: string; resultDataUrl: string } | null> => {
+  const originalCanvas = await getOriginalCanvas()
+  const fullCanvas = await drawFullCanvas()
+  if (!originalCanvas || !fullCanvas) {
+    return null
+  }
+  return {
+    originalDataUrl: originalCanvas.toDataURL('image/png'),
+    resultDataUrl: fullCanvas.toDataURL('image/png'),
   }
 }
 
@@ -240,6 +398,9 @@ onMounted(() => {
 defineExpose({
   canvasRef,
   getCanvas: () => canvasRef.value,
+  getCanvasAsync,
+  getOriginalCanvas,
+  getBothCanvases,
 })
 </script>
 

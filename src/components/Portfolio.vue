@@ -83,7 +83,8 @@ const handleLoad = (outfit: Outfit) => {
         class="outfit-card"
       >
         <div class="outfit-thumb">
-          <svg viewBox="0 0 260 320" class="thumb-svg">
+          <img v-if="outfit.previewImage" :src="outfit.previewImage" class="thumb-img" alt="搭配预览" />
+          <svg v-else viewBox="0 0 260 320" class="thumb-svg">
             <defs>
               <linearGradient :id="'thumb-grad-' + outfit.id" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" :stop-color="hairColors.find(c => c.id === outfit.hairColorId)?.secondaryColor || '#8B7355'" />
@@ -272,9 +273,9 @@ const handleLoad = (outfit: Outfit) => {
 }
 
 .outfit-thumb {
-  width: 60px;
-  height: 72px;
-  border-radius: 10px;
+  width: 80px;
+  height: 96px;
+  border-radius: 12px;
   overflow: hidden;
   background: linear-gradient(180deg, #FEF3F7 0%, #FCE4EC 100%);
   flex-shrink: 0;
@@ -283,6 +284,13 @@ const handleLoad = (outfit: Outfit) => {
 .thumb-svg {
   width: 100%;
   height: 100%;
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .outfit-info {

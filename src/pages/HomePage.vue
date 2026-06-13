@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Sparkles } from 'lucide-vue-next'
+import { ref } from 'vue'
+import { Sparkles, Scissors, BookOpen } from 'lucide-vue-next'
 import FaceCanvas from '@/components/FaceCanvas.vue'
 import HairLibrary from '@/components/HairLibrary.vue'
 import ColorPanel from '@/components/ColorPanel.vue'
@@ -10,28 +10,35 @@ import { useHairStyle } from '@/composables/useHairStyle'
 import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
 import { faceShapeMap } from '@/data/faceShapes'
+import type { OccasionTag } from '@/types'
 
 const faceCanvasRef = ref<InstanceType<typeof FaceCanvas> | null>(null)
-const { selectedHairstyle, selectedHairColor, selectedFaceShape, selectedBangs } = useHairStyle()
+const { saveToPortfolio, selectedHairstyle, selectedHairColor, selectedFaceShape, selectedBangs } = useHairStyle()
 
-const handleSave = () => {
-  const canvas = faceCanvasRef.value?.getCanvas()
+const activeMobileTab = ref<'hairstyle' | 'portfolio'>('hairstyle')
+
+const handleSave = async (data: { name: string; tags: OccasionTag[] }) => {
+  const canvas = await faceCanvasRef.value?.getCanvasAsync()
+  let previewImage: string | undefined
   if (canvas) {
-    const previewImage = canvas.toDataURL('image/png')
-    return previewImage
+    previewImage = canvas.toDataURL('image/png')
   }
+  saveToPortfolio(data.name, data.tags, previewImage)
 }
 
-const handleExport = () => {
-  const canvas = faceCanvasRef.value?.getCanvas()
-  if (!canvas) return
+const handleExport = async () => {
+  const resultCanvas = await faceCanvasRef.value?.getCanvasAsync()
+  if (!resultCanvas) return
+
+  const { originalDataUrl, resultDataUrl } = await faceCanvasRef.value?.getBothCanvases() || {}
+  if (!originalDataUrl || !resultDataUrl) return
 
   const exportCanvas = document.createElement('canvas')
   const ctx = exportCanvas.getContext('2d')
   if (!ctx) return
 
-  const width = canvas.width * 2 + 60
-  const height = canvas.height + 80
+  const width = resultCanvas.width * 2 + 60
+  const height = resultCanvas.height + 100
   exportCanvas.width = width
   exportCanvas.height = height
 
@@ -44,24 +51,36 @@ const handleExport = () => {
   ctx.fillStyle = '#C44569'
   ctx.font = 'bold 18px sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('原图', canvas.width / 2 + 30, 35)
-  ctx.fillText('效果预览', canvas.width * 1.5 + 30, 35)
+  ctx.fillText('原始脸型', resultCanvas.width / 2 + 30, 35)
+  ctx.fillText('发型效果', resultCanvas.width * 1.5 + 30, 35)
 
   ctx.save()
   ctx.strokeStyle = '#FFB6C1'
   ctx.lineWidth = 3
-  ctx.strokeRect(30, 50, canvas.width, canvas.height)
-  ctx.strokeRect(canvas.width + 30, 50, canvas.width, canvas.height)
+  ctx.strokeRect(30, 50, resultCanvas.width, resultCanvas.height)
+  ctx.strokeRect(resultCanvas.width + 30, 50, resultCanvas.width, resultCanvas.height)
   ctx.restore()
 
-  ctx.drawImage(canvas, 30, 50)
-  ctx.drawImage(canvas, canvas.width + 30, 50)
+  const loadImage = (src: string): Promise<HTMLImageElement> => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = () => resolve(img)
+      img.src = src
+    })
+  }
+
+  const originalImg = await loadImage(originalDataUrl)
+  const resultImg = await loadImage(resultDataUrl)
+
+  ctx.drawImage(originalImg, 30, 50)
+  ctx.drawImage(resultImg, resultCanvas.width + 30, 50)
 
   ctx.fillStyle = '#8B5A6B'
   ctx.font = '13px sans-serif'
-  const infoText = `发型：${selectedHairstyle.value?.name || '未选择'} | 发色：${selectedHairColor.value?.name || '未选择'}`
+  const infoText = `发型：${selectedHairstyle.value?.name || '未选择'} | 发色：${selectedHairColor.value?.name || '未选择'} | 刘海：${bangsOptions.find(b => b.type === selectedBangs.value)?.name || '无'}`
   ctx.textAlign = 'center'
-  ctx.fillText(infoText, width / 2, height - 20)
+  ctx.fillText(infoText, width / 2, height - 25)
 
   const link = document.createElement('a')
   link.download = `发型对比_${Date.now()}.png`
@@ -69,8 +88,8 @@ const handleExport = () => {
   link.click()
 }
 
-const handlePrint = () => {
-  const canvas = faceCanvasRef.value?.getCanvas()
+const handlePrint = async () => {
+  const canvas = await faceCanvasRef.value?.getCanvasAsync()
   if (!canvas) return
 
   const printWindow = window.open('', '_blank')
@@ -218,9 +237,26 @@ const handlePrint = () => {
       </div>
     </header>
 
+    <div class="mobile-tabs">
+      <button
+        :class="['mobile-tab', { active: activeMobileTab === 'hairstyle' }]"
+        @click="activeMobileTab = 'hairstyle'"
+      >
+        <Scissors :size="16" />
+        发型库
+      </button>
+      <button
+        :class="['mobile-tab', { active: activeMobileTab === 'portfolio' }]"
+        @click="activeMobileTab = 'portfolio'"
+      >
+        <BookOpen :size="16" />
+        作品集
+      </button>
+    </div>
+
     <main class="main-content">
       <div class="layout-grid">
-        <aside class="left-panel">
+        <aside class="left-panel" :class="{ 'mobile-hidden': activeMobileTab !== 'hairstyle' }">
           <HairLibrary />
         </aside>
 
@@ -238,7 +274,7 @@ const handlePrint = () => {
           </div>
         </section>
 
-        <aside class="right-panel">
+        <aside class="right-panel" :class="{ 'mobile-visible': activeMobileTab === 'portfolio' }">
           <Portfolio />
         </aside>
       </div>
@@ -295,6 +331,39 @@ const handlePrint = () => {
   color: #8B5A6B;
 }
 
+.mobile-tabs {
+  display: none;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px 16px;
+}
+
+.mobile-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 24px;
+  border: 1px solid #FFB6C1;
+  border-radius: 20px;
+  background: #fff;
+  color: #C44569;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.mobile-tab:hover {
+  background: #FFF0F3;
+}
+
+.mobile-tab.active {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(196, 69, 105, 0.3);
+}
+
 .main-content {
   max-width: 1400px;
   margin: 0 auto;
@@ -342,20 +411,42 @@ const handlePrint = () => {
 }
 
 @media (max-width: 1200px) {
-  .layout-grid {
-    grid-template-columns: 280px 1fr;
+  .mobile-tabs {
+    display: flex;
   }
 
-  .right-panel {
-    display: none;
-  }
-}
-
-@media (max-width: 900px) {
   .layout-grid {
     grid-template-columns: 1fr;
   }
 
+  .left-panel {
+    display: block;
+    position: static;
+    max-height: none;
+    order: 2;
+  }
+
+  .right-panel {
+    display: none;
+    position: static;
+    max-height: none;
+    order: 3;
+  }
+
+  .left-panel.mobile-hidden {
+    display: none !important;
+  }
+
+  .right-panel.mobile-visible {
+    display: block !important;
+  }
+
+  .center-panel {
+    order: 1;
+  }
+}
+
+@media (max-width: 900px) {
   .left-panel,
   .right-panel {
     position: static;

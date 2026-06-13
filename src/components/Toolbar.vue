@@ -5,12 +5,12 @@ import { useHairStyle } from '@/composables/useHairStyle'
 import type { OccasionTag } from '@/types'
 
 const emit = defineEmits<{
-  (e: 'save'): void
+  (e: 'save', data: { name: string; tags: OccasionTag[] }): void
   (e: 'export'): void
   (e: 'print'): void
 }>()
 
-const { selectedHairstyle, saveToPortfolio } = useHairStyle()
+const { selectedHairstyle } = useHairStyle()
 
 const showSaveModal = ref(false)
 const outfitName = ref('')
@@ -42,8 +42,7 @@ const confirmSave = () => {
     alert('请输入搭配名称')
     return
   }
-  emit('save')
-  saveToPortfolio(outfitName.value, selectedTags.value)
+  emit('save', { name: outfitName.value, tags: selectedTags.value })
   showSaveModal.value = false
 }
 
