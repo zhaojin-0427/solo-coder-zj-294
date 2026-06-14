@@ -23,7 +23,7 @@ const {
   showCompareView,
   selectedForCompareOutfits,
   setShowCompareView,
-  portfolio,
+  currentAppliedOutfit,
 } = useHairStyle()
 
 const activeMobileTab = ref<'hairstyle' | 'portfolio'>('hairstyle')
@@ -344,9 +344,10 @@ const handlePrint = async () => {
   const bangsName = bangsOptions.find(b => b.type === selectedBangs.value)?.name || '无刘海'
   const previewUrl = canvas.toDataURL('image/png')
 
-  const currentOutfit = portfolio.value[0]
-  const noteText = currentOutfit?.note || ''
-  const ratingText = currentOutfit?.rating ? renderStars(currentOutfit.rating) : '未评分'
+  const noteText = currentAppliedOutfit.value?.note || ''
+  const ratingText = currentAppliedOutfit.value?.rating
+    ? renderStars(currentAppliedOutfit.value.rating)
+    : '未评分'
 
   printWindow.document.write(`
     <!DOCTYPE html>

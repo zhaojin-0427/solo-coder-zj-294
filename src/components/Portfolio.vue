@@ -91,6 +91,15 @@ const renderStars = (rating?: Rating) => {
 }
 
 const canStartCompare = computed(() => selectedForCompareOutfits.value.length >= 2)
+
+const handleRatingChange = (e: Event) => {
+  const value = (e.target as HTMLSelectElement).value
+  if (value === 'all') {
+    setRatingFilter('all')
+  } else {
+    setRatingFilter(Number(value) as Rating)
+  }
+}
 </script>
 
 <template>
@@ -139,11 +148,11 @@ const canStartCompare = computed(() => selectedForCompareOutfits.value.length >=
         <div class="filter-group">
           <span class="filter-label">评分：</span>
           <select
-            :value="currentRatingFilter"
+            :value="String(currentRatingFilter)"
             class="filter-select"
-            @change="(e) => setRatingFilter((e.target as HTMLSelectElement).value as Rating | 'all')"
+            @change="handleRatingChange"
           >
-            <option v-for="r in ratingOptions" :key="r" :value="r">
+            <option v-for="r in ratingOptions" :key="r" :value="String(r)">
               {{ r === 'all' ? '全部' : renderStars(r as Rating) }}
             </option>
           </select>

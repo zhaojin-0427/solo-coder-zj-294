@@ -16,6 +16,7 @@ const currentRatingFilter = ref<Rating | 'all'>('all')
 const currentSort = ref<SortType>('time-desc')
 const selectedForCompare = ref<string[]>([])
 const showCompareView = ref(false)
+const currentAppliedOutfit = ref<Outfit | null>(null)
 
 export function useHairStyle() {
   const recommendedHairstyles = computed(() => {
@@ -24,10 +25,12 @@ export function useHairStyle() {
 
   const setPortrait = (image: string | null) => {
     portraitImage.value = image
+    currentAppliedOutfit.value = null
   }
 
   const setFaceShape = (shape: FaceShapeType) => {
     selectedFaceShape.value = shape
+    currentAppliedOutfit.value = null
   }
 
   const setHairstyle = (hairstyle: Hairstyle | null) => {
@@ -35,14 +38,17 @@ export function useHairStyle() {
     if (hairstyle) {
       selectedBangs.value = hairstyle.bangs
     }
+    currentAppliedOutfit.value = null
   }
 
   const setHairColor = (color: HairColor) => {
     selectedHairColor.value = color
+    currentAppliedOutfit.value = null
   }
 
   const setBangs = (bangs: BangsType) => {
     selectedBangs.value = bangs
+    currentAppliedOutfit.value = null
   }
 
   const saveToPortfolio = (name: string, tags: OccasionTag[], previewImage?: string, note?: string, rating?: Rating) => {
@@ -64,6 +70,7 @@ export function useHairStyle() {
     }
 
     portfolio.value = addOutfit(outfit)
+    currentAppliedOutfit.value = outfit
     return outfit
   }
 
@@ -120,6 +127,7 @@ export function useHairStyle() {
     selectedFaceShape.value = outfit.faceShapeType
     selectedBangs.value = outfit.bangsType
     portraitImage.value = outfit.portraitImage || null
+    currentAppliedOutfit.value = outfit
   }
 
   const toggleCompareSelect = (id: string, force?: boolean) => {
@@ -164,6 +172,7 @@ export function useHairStyle() {
     selectedForCompare,
     selectedForCompareOutfits,
     showCompareView,
+    currentAppliedOutfit,
     recommendedHairstyles,
     faceShapes,
     hairColors,
