@@ -1,20 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Save, Download, Printer, X, Tag } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
+import { Save, Download, Printer, X, Tag, Star, FileText, ChevronDown } from 'lucide-vue-next'
 import { useHairStyle } from '@/composables/useHairStyle'
-import type { OccasionTag } from '@/types'
+import type { OccasionTag, Rating } from '@/types'
 
 const emit = defineEmits<{
-  (e: 'save', data: { name: string; tags: OccasionTag[] }): void
-  (e: 'export'): void
+  (e: 'save', data: { name: string; tags: OccasionTag[]; note?: string; rating?: Rating }): void
+  (e: 'export', mode: 'current' | 'compare'): void
   (e: 'print'): void
 }>()
 
-const { selectedHairstyle } = useHairStyle()
+const { selectedHairstyle, selectedForCompareOutfits } = useHairStyle()
 
 const showSaveModal = ref(false)
+const showExportMenu = ref(false)
 const outfitName = ref('')
 const selectedTags = ref<OccasionTag[]>([])
+const outfitNote = ref('')
+const outfitRating = ref<Rating | null>(null)
 
 const occasionOptions: { key: OccasionTag; name: string; color: string }[] = [
   { key: 'work', name: '职场', color: '#4A90D9' },
@@ -22,9 +25,13 @@ const occasionOptions: { key: OccasionTag; name: string; color: string }[] = [
   { key: 'vacation', name: '度假', color: '#66BB6A' },
 ]
 
+const canExportCompare = computed(() => selectedForCompareOutfits.value.length >= 2)
+
 const openSaveModal = () => {
   outfitName.value = selectedHairstyle.value?.name || '我的搭配'
   selectedTags.value = []
+  outfitNote.value = ''
+  outfitRating.value = null
   showSaveModal.value = true
 }
 
@@ -37,17 +44,27 @@ const toggleTag = (tag: OccasionTag) => {
   }
 }
 
+const setRating = (rating: Rating) => {
+  outfitRating.value = outfitRating.value === rating ? null : rating
+}
+
 const confirmSave = () => {
   if (!outfitName.value.trim()) {
     alert('请输入搭配名称')
     return
   }
-  emit('save', { name: outfitName.value, tags: selectedTags.value })
+  emit('save', {
+    name: outfitName.value,
+    tags: selectedTags.value,
+    note: outfitNote.value || undefined,
+    rating: outfitRating.value || undefined,
+  })
   showSaveModal.value = false
 }
 
-const handleExport = () => {
-  emit('export')
+const handleExport = (mode: 'current' | 'compare') => {
+  showExportMenu.value = false
+  emit('export', mode)
 }
 
 const handlePrint = () => {
@@ -61,10 +78,29 @@ const handlePrint = () => {
       <Save :size="18" />
       保存搭配
     </button>
-    <button class="tool-btn secondary" @click="handleExport">
-      <Download :size="18" />
-      导出图片
-    </button>
+    <div class="export-wrapper">
+      <button class="tool-btn secondary" @click="showExportMenu = !showExportMenu">
+        <Download :size="18" />
+        导出图片
+        <ChevronDown :size="14" />
+      </button>
+      <div v-if="showExportMenu" class="export-menu">
+        <button class="export-item" @click="handleExport('current')">
+          <FileText :size="14" />
+          导出当前方案
+        </button>
+        <button
+          class="export-item"
+          :class="{ disabled: !canExportCompare }"
+          :disabled="!canExportCompare"
+          @click="canExportCompare && handleExport('compare')"
+        >
+          <FileText :size="14" />
+          导出对比卡
+          <span v-if="!canExportCompare" class="export-hint">(需选2-3个方案)</span>
+        </button>
+      </div>
+    </div>
     <button class="tool-btn secondary" @click="handlePrint">
       <Printer :size="18" />
       打印参考卡
@@ -106,6 +142,36 @@ const handlePrint = () => {
                 {{ option.name }}
               </button>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <Star :size="14" />
+              评分
+            </label>
+            <div class="rating-options">
+              <button
+                v-for="i in 5"
+                :key="i"
+                :class="['rating-star', { active: outfitRating && outfitRating >= i }]"
+                @click="setRating(i as Rating)"
+              >
+                <Star :size="24" :fill="outfitRating && outfitRating >= i ? 'currentColor' : 'none'" />
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <FileText :size="14" />
+              备注 / 适合理由
+            </label>
+            <textarea
+              v-model="outfitNote"
+              class="form-textarea"
+              placeholder="记录这个搭配的灵感来源、适合的理由等..."
+              rows="3"
+            />
           </div>
         </div>
 
@@ -343,5 +409,106 @@ const handlePrint = () => {
 .confirm-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(196, 69, 105, 0.35);
+}
+
+.export-wrapper {
+  position: relative;
+}
+
+.export-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(196, 69, 105, 0.2);
+  padding: 8px;
+  z-index: 100;
+  border: 1px solid #FFE4EA;
+}
+
+.export-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #5D4037;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.export-item:hover:not(.disabled) {
+  background: #FFF0F3;
+  color: #C44569;
+}
+
+.export-item.disabled {
+  color: #B88899;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.export-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: #B88899;
+}
+
+.rating-options {
+  display: flex;
+  gap: 8px;
+}
+
+.rating-star {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  background: transparent;
+  color: #FFB6C1;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 8px;
+}
+
+.rating-star:hover {
+  color: #FFD54F;
+  transform: scale(1.1);
+}
+
+.rating-star.active {
+  color: #FFD54F;
+}
+
+.form-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #FFB6C1;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #5D4037;
+  outline: none;
+  transition: all 0.3s;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  min-height: 80px;
+}
+
+.form-textarea:focus {
+  border-color: #C44569;
+  box-shadow: 0 0 0 3px rgba(196, 69, 105, 0.15);
+}
+
+.form-textarea::placeholder {
+  color: #B88899;
 }
 </style>

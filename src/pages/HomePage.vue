@@ -6,27 +6,113 @@ import HairLibrary from '@/components/HairLibrary.vue'
 import ColorPanel from '@/components/ColorPanel.vue'
 import Portfolio from '@/components/Portfolio.vue'
 import Toolbar from '@/components/Toolbar.vue'
+import CompareView from '@/components/CompareView.vue'
 import { useHairStyle } from '@/composables/useHairStyle'
 import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
 import { faceShapeMap } from '@/data/faceShapes'
-import type { OccasionTag } from '@/types'
+import type { OccasionTag, Rating, Outfit } from '@/types'
 
 const faceCanvasRef = ref<InstanceType<typeof FaceCanvas> | null>(null)
-const { saveToPortfolio, selectedHairstyle, selectedHairColor, selectedFaceShape, selectedBangs } = useHairStyle()
+const {
+  saveToPortfolio,
+  selectedHairstyle,
+  selectedHairColor,
+  selectedFaceShape,
+  selectedBangs,
+  showCompareView,
+  selectedForCompareOutfits,
+  setShowCompareView,
+  portfolio,
+} = useHairStyle()
 
 const activeMobileTab = ref<'hairstyle' | 'portfolio'>('hairstyle')
 
-const handleSave = async (data: { name: string; tags: OccasionTag[] }) => {
+const formatDate = (timestamp: number) => {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+const renderStars = (rating?: Rating) => {
+  if (!rating) return '未评分'
+  return '★'.repeat(rating) + '☆'.repeat(5 - rating)
+}
+
+const handleSave = async (data: { name: string; tags: OccasionTag[]; note?: string; rating?: Rating }) => {
   const canvas = await faceCanvasRef.value?.getCanvasAsync()
   let previewImage: string | undefined
   if (canvas) {
     previewImage = canvas.toDataURL('image/png')
   }
-  saveToPortfolio(data.name, data.tags, previewImage)
+  saveToPortfolio(data.name, data.tags, previewImage, data.note, data.rating)
 }
 
-const handleExport = async () => {
+const loadImage = (src: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(img)
+    img.src = src
+  })
+}
+
+const drawOutfitPreview = async (outfit: Outfit, targetCanvas: HTMLCanvasElement) => {
+  const ctx = targetCanvas.getContext('2d')
+  if (!ctx) return
+
+  const width = targetCanvas.width
+  const height = targetCanvas.height
+
+  const bgGradient = ctx.createLinearGradient(0, 0, 0, height)
+  bgGradient.addColorStop(0, '#FEF3F7')
+  bgGradient.addColorStop(1, '#FCE4EC')
+  ctx.fillStyle = bgGradient
+  ctx.fillRect(0, 0, width, height)
+
+  if (outfit.previewImage) {
+    const img = await loadImage(outfit.previewImage)
+    const scale = Math.min(width / img.width, height / img.height) * 0.9
+    const w = img.width * scale
+    const h = img.height * scale
+    ctx.drawImage(img, (width - w) / 2, (height - h) / 2, w, h)
+  } else {
+    const centerX = width / 2
+    const centerY = height / 2 + 20
+    ctx.save()
+    ctx.fillStyle = '#FFE0C2'
+    ctx.strokeStyle = '#E8B896'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.ellipse(centerX, centerY, 85, 110, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+
+    const hairstyle = hairstyles.find(h => h.id === outfit.hairstyleId)
+    const color = hairColors.find(c => c.id === outfit.hairColorId)
+    if (hairstyle && color) {
+      const hairGradient = ctx.createLinearGradient(0, 40, 0, 340)
+      hairGradient.addColorStop(0, color.secondaryColor)
+      hairGradient.addColorStop(1, color.primaryColor)
+      ctx.fillStyle = hairGradient
+      ctx.strokeStyle = color.primaryColor
+      ctx.lineWidth = 2
+
+      const scale = 1.4
+      const offsetX = width / 2 - 130 * scale + 30
+      const offsetY = 40
+      const path = new Path2D(hairstyle.svgPath)
+      ctx.save()
+      ctx.translate(offsetX, offsetY)
+      ctx.scale(scale, scale)
+      ctx.fill(path)
+      ctx.stroke(path)
+      ctx.restore()
+    }
+    ctx.restore()
+  }
+}
+
+const handleExportCurrent = async () => {
   const resultCanvas = await faceCanvasRef.value?.getCanvasAsync()
   if (!resultCanvas) return
 
@@ -38,7 +124,7 @@ const handleExport = async () => {
   if (!ctx) return
 
   const width = resultCanvas.width * 2 + 60
-  const height = resultCanvas.height + 100
+  const height = resultCanvas.height + 140
   exportCanvas.width = width
   exportCanvas.height = height
 
@@ -49,7 +135,7 @@ const handleExport = async () => {
   ctx.fillRect(0, 0, width, height)
 
   ctx.fillStyle = '#C44569'
-  ctx.font = 'bold 18px sans-serif'
+  ctx.font = 'bold 22px sans-serif'
   ctx.textAlign = 'center'
   ctx.fillText('原始脸型', resultCanvas.width / 2 + 30, 35)
   ctx.fillText('发型效果', resultCanvas.width * 1.5 + 30, 35)
@@ -61,15 +147,6 @@ const handleExport = async () => {
   ctx.strokeRect(resultCanvas.width + 30, 50, resultCanvas.width, resultCanvas.height)
   ctx.restore()
 
-  const loadImage = (src: string): Promise<HTMLImageElement> => {
-    return new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => resolve(img)
-      img.onerror = () => resolve(img)
-      img.src = src
-    })
-  }
-
   const originalImg = await loadImage(originalDataUrl)
   const resultImg = await loadImage(resultDataUrl)
 
@@ -77,15 +154,181 @@ const handleExport = async () => {
   ctx.drawImage(resultImg, resultCanvas.width + 30, 50)
 
   ctx.fillStyle = '#8B5A6B'
-  ctx.font = '13px sans-serif'
+  ctx.font = '14px sans-serif'
   const infoText = `发型：${selectedHairstyle.value?.name || '未选择'} | 发色：${selectedHairColor.value?.name || '未选择'} | 刘海：${bangsOptions.find(b => b.type === selectedBangs.value)?.name || '无'}`
   ctx.textAlign = 'center'
-  ctx.fillText(infoText, width / 2, height - 25)
+  ctx.fillText(infoText, width / 2, height - 65)
+  ctx.fillStyle = '#B88899'
+  ctx.font = '12px sans-serif'
+  ctx.fillText(`生成时间：${new Date().toLocaleString('zh-CN')}`, width / 2, height - 35)
 
   const link = document.createElement('a')
-  link.download = `发型对比_${Date.now()}.png`
+  link.download = `发型方案_${Date.now()}.png`
   link.href = exportCanvas.toDataURL('image/png')
   link.click()
+}
+
+const handleExportCompare = async () => {
+  const outfits = selectedForCompareOutfits.value
+  if (outfits.length < 2) return
+
+  const cardWidth = 320
+  const cardHeight = 620
+  const padding = 24
+  const gap = 20
+  const headerHeight = 80
+
+  const totalWidth = cardWidth * outfits.length + gap * (outfits.length - 1) + padding * 2
+  const totalHeight = cardHeight + headerHeight + padding * 2
+
+  const exportCanvas = document.createElement('canvas')
+  const ctx = exportCanvas.getContext('2d')
+  if (!ctx) return
+
+  exportCanvas.width = totalWidth
+  exportCanvas.height = totalHeight
+
+  const bgGradient = ctx.createLinearGradient(0, 0, 0, totalHeight)
+  bgGradient.addColorStop(0, '#FFF5F8')
+  bgGradient.addColorStop(1, '#FCE4EC')
+  ctx.fillStyle = bgGradient
+  ctx.fillRect(0, 0, totalWidth, totalHeight)
+
+  ctx.fillStyle = '#C44569'
+  ctx.font = 'bold 26px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('试戴方案对比卡', totalWidth / 2, 45)
+  ctx.fillStyle = '#8B5A6B'
+  ctx.font = '13px sans-serif'
+  ctx.fillText(`生成时间：${new Date().toLocaleString('zh-CN')}`, totalWidth / 2, 68)
+
+  for (let i = 0; i < outfits.length; i++) {
+    const outfit = outfits[i]
+    const x = padding + i * (cardWidth + gap)
+    const y = headerHeight
+
+    ctx.save()
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#FFE4EA'
+    ctx.lineWidth = 2
+    const radius = 16
+    ctx.beginPath()
+    ctx.moveTo(x + radius, y)
+    ctx.lineTo(x + cardWidth - radius, y)
+    ctx.quadraticCurveTo(x + cardWidth, y, x + cardWidth, y + radius)
+    ctx.lineTo(x + cardWidth, y + cardHeight - radius)
+    ctx.quadraticCurveTo(x + cardWidth, y + cardHeight, x + cardWidth - radius, y + cardHeight)
+    ctx.lineTo(x + radius, y + cardHeight)
+    ctx.quadraticCurveTo(x, y + cardHeight, x, y + cardHeight - radius)
+    ctx.lineTo(x, y + radius)
+    ctx.quadraticCurveTo(x, y, x + radius, y)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+
+    ctx.fillStyle = '#FF6B9D'
+    ctx.font = 'bold 13px sans-serif'
+    ctx.textAlign = 'left'
+    ctx.fillText(`方案 ${i + 1}`, x + 16, y + 28)
+
+    const previewCanvas = document.createElement('canvas')
+    previewCanvas.width = 260
+    previewCanvas.height = 280
+    await drawOutfitPreview(outfit, previewCanvas)
+    ctx.drawImage(previewCanvas, x + 30, y + 42, 260, 280)
+
+    let contentY = y + 340
+
+    ctx.fillStyle = '#5D4037'
+    ctx.font = 'bold 16px sans-serif'
+    ctx.textAlign = 'left'
+    ctx.fillText(outfit.name, x + 16, contentY)
+    contentY += 24
+
+    if (outfit.rating) {
+      ctx.fillStyle = '#FFD54F'
+      ctx.font = '16px sans-serif'
+      ctx.fillText(renderStars(outfit.rating), x + 16, contentY)
+      contentY += 22
+    }
+
+    ctx.fillStyle = '#8B5A6B'
+    ctx.font = '12px sans-serif'
+    const hairstyle = hairstyles.find(h => h.id === outfit.hairstyleId)
+    const color = hairColors.find(c => c.id === outfit.hairColorId)
+    const bangs = bangsOptions.find(b => b.type === outfit.bangsType)
+    const faceShape = faceShapeMap[outfit.faceShapeType]
+
+    ctx.fillText(`脸型：${faceShape?.name || '未知'}`, x + 16, contentY)
+    contentY += 18
+    ctx.fillText(`发型：${hairstyle?.name || '未知'}`, x + 16, contentY)
+    contentY += 18
+    ctx.fillText(`刘海：${bangs?.name || '未知'}`, x + 16, contentY)
+    contentY += 18
+    ctx.fillText(`发色：${color?.name || '未知'}`, x + 16, contentY)
+    contentY += 22
+
+    if (outfit.occasionTags.length > 0) {
+      ctx.fillStyle = '#8B5A6B'
+      ctx.font = '12px sans-serif'
+      ctx.fillText('场合：', x + 16, contentY)
+      let tagX = x + 52
+      outfit.occasionTags.forEach(tag => {
+        const tagName = tag === 'work' ? '职场' : tag === 'date' ? '约会' : '度假'
+        ctx.fillStyle = '#FFF0F3'
+        const tagWidth = ctx.measureText(tagName).width + 16
+        ctx.beginPath()
+        ctx.roundRect(tagX, contentY - 12, tagWidth, 20, 6)
+        ctx.fill()
+        ctx.fillStyle = '#C44569'
+        ctx.fillText(tagName, tagX + 8, contentY + 2)
+        tagX += tagWidth + 6
+      })
+      contentY += 28
+    }
+
+    ctx.fillStyle = '#B88899'
+    ctx.font = '11px sans-serif'
+    ctx.fillText(`保存时间：${formatDate(outfit.createdAt)}`, x + 16, contentY)
+    contentY += 20
+
+    if (outfit.note) {
+      ctx.fillStyle = '#6B4452'
+      ctx.font = '12px sans-serif'
+      ctx.fillText('备注：', x + 16, contentY)
+      contentY += 18
+      ctx.fillStyle = '#5D4037'
+      ctx.font = '12px sans-serif'
+      const words = outfit.note.split('')
+      let line = ''
+      for (const char of words) {
+        const testLine = line + char
+        if (ctx.measureText(testLine).width > cardWidth - 40) {
+          ctx.fillText(line, x + 16, contentY)
+          line = char
+          contentY += 16
+          if (contentY > y + cardHeight - 30) break
+        } else {
+          line = testLine
+        }
+      }
+      if (line) ctx.fillText(line, x + 16, contentY)
+    }
+  }
+
+  const link = document.createElement('a')
+  link.download = `方案对比卡_${Date.now()}.png`
+  link.href = exportCanvas.toDataURL('image/png')
+  link.click()
+}
+
+const handleExport = async (mode: 'current' | 'compare') => {
+  if (mode === 'current') {
+    await handleExportCurrent()
+  } else {
+    await handleExportCompare()
+  }
 }
 
 const handlePrint = async () => {
@@ -100,6 +343,10 @@ const handlePrint = async () => {
   const faceShapeName = faceShapeMap[selectedFaceShape.value]?.name || '未选择'
   const bangsName = bangsOptions.find(b => b.type === selectedBangs.value)?.name || '无刘海'
   const previewUrl = canvas.toDataURL('image/png')
+
+  const currentOutfit = portfolio.value[0]
+  const noteText = currentOutfit?.note || ''
+  const ratingText = currentOutfit?.rating ? renderStars(currentOutfit.rating) : '未评分'
 
   printWindow.document.write(`
     <!DOCTYPE html>
@@ -171,6 +418,25 @@ const handlePrint = async () => {
           font-weight: 600;
           font-size: 14px;
         }
+        .note-section {
+          margin-top: 16px;
+          background: #FEF3F7;
+          border-radius: 12px;
+          padding: 16px;
+        }
+        .note-label {
+          color: #8B5A6B;
+          font-size: 13px;
+          font-weight: 500;
+          margin-bottom: 8px;
+        }
+        .note-content {
+          color: #5D4037;
+          font-size: 13px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
         .card-footer {
           padding: 20px 24px;
           text-align: center;
@@ -208,7 +474,17 @@ const handlePrint = async () => {
               <span class="info-label">发色</span>
               <span class="info-value">${hairColorName}</span>
             </div>
+            <div class="info-item">
+              <span class="info-label">评分</span>
+              <span class="info-value">${ratingText}</span>
+            </div>
           </div>
+          ${noteText ? `
+            <div class="note-section">
+              <div class="note-label">📝 备注 / 适合理由</div>
+              <div class="note-content">${noteText}</div>
+            </div>
+          ` : ''}
         </div>
         <div class="card-footer">
           生成时间：${new Date().toLocaleString('zh-CN')}
@@ -283,6 +559,8 @@ const handlePrint = async () => {
     <footer class="app-footer">
       <p>© 2024 发型搭配模拟器 · 让每一次改变都充满期待</p>
     </footer>
+
+    <CompareView v-if="showCompareView" @close="setShowCompareView(false)" />
   </div>
 </template>
 

@@ -6,6 +6,10 @@ export type BangsType = 'none' | 'straight' | 'side' | 'middle'
 
 export type OccasionTag = 'work' | 'date' | 'vacation'
 
+export type Rating = 1 | 2 | 3 | 4 | 5
+
+export type SortType = 'time-desc' | 'time-asc' | 'rating-desc' | 'rating-asc'
+
 export interface FaceShape {
   type: FaceShapeType
   name: string
@@ -39,6 +43,8 @@ export interface Outfit {
   occasionTags: OccasionTag[]
   portraitImage?: string
   previewImage?: string
+  note?: string
+  rating?: Rating
   createdAt: number
 }
 

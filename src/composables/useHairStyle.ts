@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import type { Hairstyle, HairColor, FaceShapeType, BangsType, Outfit, OccasionTag } from '@/types'
+import type { Hairstyle, HairColor, FaceShapeType, BangsType, Outfit, OccasionTag, Rating, SortType } from '@/types'
 import { hairstyles, getRecommendedHairstyles } from '@/data/hairstyles'
 import { hairColors, defaultHairColor } from '@/data/hairColors'
 import { faceShapes } from '@/data/faceShapes'
@@ -12,6 +12,10 @@ const selectedHairColor = ref<HairColor>(defaultHairColor)
 const selectedBangs = ref<BangsType>('straight')
 const portfolio = ref<Outfit[]>(loadPortfolio())
 const currentFilter = ref<OccasionTag | 'all'>('all')
+const currentRatingFilter = ref<Rating | 'all'>('all')
+const currentSort = ref<SortType>('time-desc')
+const selectedForCompare = ref<string[]>([])
+const showCompareView = ref(false)
 
 export function useHairStyle() {
   const recommendedHairstyles = computed(() => {
@@ -41,7 +45,7 @@ export function useHairStyle() {
     selectedBangs.value = bangs
   }
 
-  const saveToPortfolio = (name: string, tags: OccasionTag[], previewImage?: string) => {
+  const saveToPortfolio = (name: string, tags: OccasionTag[], previewImage?: string, note?: string, rating?: Rating) => {
     if (!selectedHairstyle.value) return
 
     const outfit: Outfit = {
@@ -54,6 +58,8 @@ export function useHairStyle() {
       occasionTags: tags,
       portraitImage: portraitImage.value || undefined,
       previewImage,
+      note: note || '',
+      rating,
       createdAt: Date.now(),
     }
 
@@ -63,18 +69,46 @@ export function useHairStyle() {
 
   const deleteFromPortfolio = (id: string) => {
     portfolio.value = removeOutfit(id)
+    toggleCompareSelect(id, false)
   }
 
   const filteredPortfolio = computed(() => {
-    if (currentFilter.value === 'all') {
-      return portfolio.value
+    let result = [...portfolio.value]
+    if (currentFilter.value !== 'all') {
+      const tag = currentFilter.value as OccasionTag
+      result = result.filter((o) => o.occasionTags.includes(tag))
     }
-    const tag = currentFilter.value as OccasionTag
-    return portfolio.value.filter((o) => o.occasionTags.includes(tag))
+    if (currentRatingFilter.value !== 'all') {
+      const rating = currentRatingFilter.value as Rating
+      result = result.filter((o) => o.rating === rating)
+    }
+    switch (currentSort.value) {
+      case 'time-desc':
+        result.sort((a, b) => b.createdAt - a.createdAt)
+        break
+      case 'time-asc':
+        result.sort((a, b) => a.createdAt - b.createdAt)
+        break
+      case 'rating-desc':
+        result.sort((a, b) => (b.rating || 0) - (a.rating || 0))
+        break
+      case 'rating-asc':
+        result.sort((a, b) => (a.rating || 0) - (b.rating || 0))
+        break
+    }
+    return result
   })
 
   const setFilter = (filter: OccasionTag | 'all') => {
     currentFilter.value = filter
+  }
+
+  const setRatingFilter = (filter: Rating | 'all') => {
+    currentRatingFilter.value = filter
+  }
+
+  const setSort = (sort: SortType) => {
+    currentSort.value = sort
   }
 
   const loadOutfit = (outfit: Outfit) => {
@@ -85,7 +119,35 @@ export function useHairStyle() {
     if (color) selectedHairColor.value = color
     selectedFaceShape.value = outfit.faceShapeType
     selectedBangs.value = outfit.bangsType
-    if (outfit.portraitImage) portraitImage.value = outfit.portraitImage
+    portraitImage.value = outfit.portraitImage || null
+  }
+
+  const toggleCompareSelect = (id: string, force?: boolean) => {
+    const index = selectedForCompare.value.indexOf(id)
+    const shouldAdd = force !== undefined ? force : index === -1
+    if (shouldAdd) {
+      if (selectedForCompare.value.length < 3 && index === -1) {
+        selectedForCompare.value.push(id)
+      }
+    } else {
+      if (index > -1) {
+        selectedForCompare.value.splice(index, 1)
+      }
+    }
+  }
+
+  const clearCompareSelection = () => {
+    selectedForCompare.value = []
+  }
+
+  const selectedForCompareOutfits = computed(() => {
+    return selectedForCompare.value
+      .map((id) => portfolio.value.find((o) => o.id === id))
+      .filter((o): o is Outfit => !!o)
+  })
+
+  const setShowCompareView = (show: boolean) => {
+    showCompareView.value = show
   }
 
   return {
@@ -97,6 +159,11 @@ export function useHairStyle() {
     portfolio,
     filteredPortfolio,
     currentFilter,
+    currentRatingFilter,
+    currentSort,
+    selectedForCompare,
+    selectedForCompareOutfits,
+    showCompareView,
     recommendedHairstyles,
     faceShapes,
     hairColors,
@@ -109,6 +176,11 @@ export function useHairStyle() {
     saveToPortfolio,
     deleteFromPortfolio,
     setFilter,
+    setRatingFilter,
+    setSort,
     loadOutfit,
+    toggleCompareSelect,
+    clearCompareSelection,
+    setShowCompareView,
   }
 }

@@ -1,20 +1,27 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { BookOpen, Trash2, Eye, Tag, Briefcase, Heart, Plane } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
+import { BookOpen, Trash2, Eye, Tag, Briefcase, Heart, Plane, Star, SortAsc, SortDesc, Check, X, GitCompare } from 'lucide-vue-next'
 import { useHairStyle } from '@/composables/useHairStyle'
-import { hairstyles } from '@/data/hairstyles'
+import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
-import type { OccasionTag, Outfit } from '@/types'
+import { faceShapes } from '@/data/faceShapes'
+import type { OccasionTag, Outfit, Rating, SortType } from '@/types'
 
 const {
   filteredPortfolio,
   currentFilter,
+  currentRatingFilter,
+  currentSort,
   setFilter,
+  setRatingFilter,
+  setSort,
   deleteFromPortfolio,
   loadOutfit,
-  selectedHairstyle,
-  selectedHairColor,
-  selectedFaceShape,
+  selectedForCompare,
+  toggleCompareSelect,
+  clearCompareSelection,
+  setShowCompareView,
+  selectedForCompareOutfits,
 } = useHairStyle()
 
 const occasionOptions: { key: OccasionTag | 'all'; name: string; icon: any }[] = [
@@ -24,9 +31,18 @@ const occasionOptions: { key: OccasionTag | 'all'; name: string; icon: any }[] =
   { key: 'vacation', name: '度假', icon: Plane },
 ]
 
+const ratingOptions: (Rating | 'all')[] = ['all', 5, 4, 3, 2, 1]
+
+const sortOptions: { key: SortType; name: string; icon: any }[] = [
+  { key: 'time-desc', name: '最新', icon: SortDesc },
+  { key: 'time-asc', name: '最早', icon: SortAsc },
+  { key: 'rating-desc', name: '评分高→低', icon: SortDesc },
+  { key: 'rating-asc', name: '评分低→高', icon: SortAsc },
+]
+
 const formatDate = (timestamp: number) => {
   const date = new Date(timestamp)
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 const getHairstyleName = (id: string) => {
@@ -35,6 +51,14 @@ const getHairstyleName = (id: string) => {
 
 const getHairColorName = (id: string) => {
   return hairColors.find((c) => c.id === id)?.name || '未知颜色'
+}
+
+const getBangsName = (type: string) => {
+  return bangsOptions.find((b) => b.type === type)?.name || '未知刘海'
+}
+
+const getFaceShapeName = (type: string) => {
+  return faceShapes.find((f) => f.type === type)?.name || '未知脸型'
 }
 
 const handleDelete = (id: string) => {
@@ -46,6 +70,27 @@ const handleDelete = (id: string) => {
 const handleLoad = (outfit: Outfit) => {
   loadOutfit(outfit)
 }
+
+const handleToggleCompare = (id: string) => {
+  toggleCompareSelect(id)
+}
+
+const openCompareView = () => {
+  if (selectedForCompareOutfits.value.length >= 2) {
+    setShowCompareView(true)
+  }
+}
+
+const isSelectedForCompare = (id: string) => {
+  return selectedForCompare.value.includes(id)
+}
+
+const renderStars = (rating?: Rating) => {
+  if (!rating) return ''
+  return '★'.repeat(rating) + '☆'.repeat(5 - rating)
+}
+
+const canStartCompare = computed(() => selectedForCompareOutfits.value.length >= 2)
 </script>
 
 <template>
@@ -58,16 +103,64 @@ const handleLoad = (outfit: Outfit) => {
       <span class="count-badge">{{ filteredPortfolio.length }}</span>
     </div>
 
-    <div class="occasion-tabs">
+    <div v-if="selectedForCompare.length > 0" class="compare-bar">
+      <span class="compare-count">
+        <GitCompare :size="14" />
+        已选 {{ selectedForCompare.length }}/3
+      </span>
       <button
-        v-for="option in occasionOptions"
-        :key="option.key"
-        :class="['occasion-btn', { active: currentFilter === option.key }]"
-        @click="setFilter(option.key)"
+        class="compare-btn"
+        :class="{ active: canStartCompare }"
+        :disabled="!canStartCompare"
+        @click="openCompareView"
       >
-        <component :is="option.icon" :size="14" />
-        {{ option.name }}
+        开始对比
       </button>
+      <button class="clear-compare-btn" @click="clearCompareSelection">
+        <X :size="14" />
+        清空
+      </button>
+    </div>
+
+    <div class="filter-section">
+      <div class="occasion-tabs">
+        <button
+          v-for="option in occasionOptions"
+          :key="option.key"
+          :class="['occasion-btn', { active: currentFilter === option.key }]"
+          @click="setFilter(option.key)"
+        >
+          <component :is="option.icon" :size="14" />
+          {{ option.name }}
+        </button>
+      </div>
+
+      <div class="filter-row">
+        <div class="filter-group">
+          <span class="filter-label">评分：</span>
+          <select
+            :value="currentRatingFilter"
+            class="filter-select"
+            @change="(e) => setRatingFilter((e.target as HTMLSelectElement).value as Rating | 'all')"
+          >
+            <option v-for="r in ratingOptions" :key="r" :value="r">
+              {{ r === 'all' ? '全部' : renderStars(r as Rating) }}
+            </option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">排序：</span>
+          <select
+            :value="currentSort"
+            class="filter-select"
+            @change="(e) => setSort((e.target as HTMLSelectElement).value as SortType)"
+          >
+            <option v-for="s in sortOptions" :key="s.key" :value="s.key">
+              {{ s.name }}
+            </option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div class="portfolio-list">
@@ -80,8 +173,17 @@ const handleLoad = (outfit: Outfit) => {
       <div
         v-for="outfit in filteredPortfolio"
         :key="outfit.id"
-        class="outfit-card"
+        :class="['outfit-card', { selected: isSelectedForCompare(outfit.id) }]"
       >
+        <button
+          class="compare-checkbox"
+          :class="{ checked: isSelectedForCompare(outfit.id) }"
+          @click="handleToggleCompare(outfit.id)"
+          :title="isSelectedForCompare(outfit.id) ? '取消对比' : '加入对比'"
+        >
+          <Check v-if="isSelectedForCompare(outfit.id)" :size="14" />
+        </button>
+
         <div class="outfit-thumb">
           <img v-if="outfit.previewImage" :src="outfit.previewImage" class="thumb-img" alt="搭配预览" />
           <svg v-else viewBox="0 0 260 320" class="thumb-svg">
@@ -101,10 +203,20 @@ const handleLoad = (outfit: Outfit) => {
         </div>
 
         <div class="outfit-info">
-          <h4 class="outfit-name">{{ outfit.name }}</h4>
+          <div class="outfit-header">
+            <h4 class="outfit-name">{{ outfit.name }}</h4>
+            <div v-if="outfit.rating" class="outfit-rating">
+              <Star v-for="i in 5" :key="i" :size="12" :fill="i <= outfit.rating! ? '#FFD54F' : 'none'" :class="['rating-star-icon', { filled: i <= outfit.rating! }]" />
+            </div>
+          </div>
           <div class="outfit-detail">
+            <span class="detail-item">{{ getFaceShapeName(outfit.faceShapeType) }}</span>
+            <span class="detail-dot">·</span>
             <span class="detail-item">{{ getHairstyleName(outfit.hairstyleId) }}</span>
             <span class="detail-dot">·</span>
+            <span class="detail-item">{{ getBangsName(outfit.bangsType) }}</span>
+          </div>
+          <div class="outfit-detail">
             <span class="detail-item">{{ getHairColorName(outfit.hairColorId) }}</span>
           </div>
           <div class="outfit-tags">
@@ -117,6 +229,7 @@ const handleLoad = (outfit: Outfit) => {
               {{ occasionOptions.find(o => o.key === tag)?.name }}
             </span>
           </div>
+          <p v-if="outfit.note" class="outfit-note">{{ outfit.note }}</p>
           <div class="outfit-date">{{ formatDate(outfit.createdAt) }}</div>
         </div>
 
@@ -171,10 +284,79 @@ const handleLoad = (outfit: Outfit) => {
   font-weight: 500;
 }
 
+.compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #FFF5F8, #FCE4EC);
+  border-radius: 14px;
+  margin-bottom: 14px;
+  border: 1px solid #FFB6C1;
+}
+
+.compare-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #C44569;
+  font-weight: 500;
+}
+
+.compare-btn {
+  padding: 6px 16px;
+  border: 1px solid #C44569;
+  border-radius: 12px;
+  background: #fff;
+  color: #C44569;
+  font-size: 12px;
+  cursor: not-allowed;
+  transition: all 0.3s;
+  opacity: 0.5;
+}
+
+.compare-btn.active {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  color: #fff;
+  border-color: transparent;
+  cursor: pointer;
+  opacity: 1;
+}
+
+.compare-btn.active:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(196, 69, 105, 0.3);
+}
+
+.clear-compare-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid #FFB6C1;
+  border-radius: 10px;
+  background: #fff;
+  color: #8B5A6B;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-left: auto;
+}
+
+.clear-compare-btn:hover {
+  background: #FFF0F3;
+  color: #C44569;
+}
+
+.filter-section {
+  margin-bottom: 16px;
+}
+
 .occasion-tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   overflow-x: auto;
   padding-bottom: 4px;
 }
@@ -211,6 +393,40 @@ const handleLoad = (outfit: Outfit) => {
   background: linear-gradient(135deg, #FF6B9D, #C44569);
   color: #fff;
   border-color: transparent;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: #8B5A6B;
+}
+
+.filter-select {
+  padding: 6px 10px;
+  border: 1px solid #FFB6C1;
+  border-radius: 10px;
+  background: #fff;
+  color: #5D4037;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.3s;
+}
+
+.filter-select:focus {
+  border-color: #C44569;
+  box-shadow: 0 0 0 2px rgba(196, 69, 105, 0.15);
 }
 
 .portfolio-list {
@@ -258,6 +474,7 @@ const handleLoad = (outfit: Outfit) => {
 }
 
 .outfit-card {
+  position: relative;
   display: flex;
   gap: 12px;
   padding: 12px;
@@ -270,6 +487,41 @@ const handleLoad = (outfit: Outfit) => {
 .outfit-card:hover {
   border-color: #FFB6C1;
   box-shadow: 0 4px 12px rgba(196, 69, 105, 0.1);
+}
+
+.outfit-card.selected {
+  border-color: #C44569;
+  background: #FFF5F8;
+  box-shadow: 0 0 0 2px rgba(196, 69, 105, 0.15);
+}
+
+.compare-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFB6C1;
+  border-radius: 6px;
+  background: #fff;
+  color: transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 2;
+  padding: 0;
+}
+
+.compare-checkbox:hover {
+  border-color: #C44569;
+}
+
+.compare-checkbox.checked {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  border-color: transparent;
+  color: #fff;
 }
 
 .outfit-thumb {
@@ -298,8 +550,16 @@ const handleLoad = (outfit: Outfit) => {
   min-width: 0;
 }
 
+.outfit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .outfit-name {
-  margin: 0 0 4px 0;
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: #5D4037;
@@ -308,11 +568,25 @@ const handleLoad = (outfit: Outfit) => {
   text-overflow: ellipsis;
 }
 
+.outfit-rating {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.rating-star-icon {
+  color: #FFD54F;
+}
+
+.rating-star-icon:not(.filled) {
+  color: #FFE4EA;
+}
+
 .outfit-detail {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-size: 11px;
   color: #8B5A6B;
 }
@@ -341,6 +615,18 @@ const handleLoad = (outfit: Outfit) => {
   color: #C44569;
   border-radius: 8px;
   font-size: 10px;
+}
+
+.outfit-note {
+  margin: 4px 0;
+  font-size: 11px;
+  color: #6B4452;
+  line-height: 1.4;
+  padding: 6px 8px;
+  background: #FEF3F7;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .outfit-date {

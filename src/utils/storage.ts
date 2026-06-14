@@ -1,6 +1,14 @@
-import type { Outfit } from '@/types'
+import type { Outfit, Rating } from '@/types'
 
 const STORAGE_KEY = 'hair-portfolio'
+
+const migrateOutfit = (outfit: any): Outfit => {
+  return {
+    ...outfit,
+    note: outfit.note || '',
+    rating: outfit.rating || undefined,
+  }
+}
 
 export const savePortfolio = (outfits: Outfit[]): void => {
   try {
@@ -14,7 +22,8 @@ export const loadPortfolio = (): Outfit[] => {
   try {
     const data = localStorage.getItem(STORAGE_KEY)
     if (data) {
-      return JSON.parse(data)
+      const parsed = JSON.parse(data)
+      return parsed.map((o: any) => migrateOutfit(o))
     }
   } catch (e) {
     console.error('Failed to load portfolio:', e)
