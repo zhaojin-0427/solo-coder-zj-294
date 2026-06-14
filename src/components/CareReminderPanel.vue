@@ -7,11 +7,13 @@ import {
   ChevronRight,
   AlertTriangle,
   Calendar,
+  ArrowRight,
 } from 'lucide-vue-next'
 import { useHairCare, careTaskTypeMeta } from '@/composables/useHairCare'
 
 const emit = defineEmits<{
   (e: 'openCenter'): void
+  (e: 'goToPlan', planId: string): void
 }>()
 
 const {
@@ -115,6 +117,9 @@ const formatShortTime = (ts: number) => {
                 {{ carePlans.find(p => p.id === task.planId)?.outfitName || '' }}
               </div>
             </div>
+            <button class="rp-goto-btn" @click.stop="emit('goToPlan', task.planId)" title="查看护理详情">
+              <ArrowRight :size="12" />
+            </button>
             <button class="rp-delay-btn" @click.stop="delayTask(task.id, 1)">
               <Clock :size="12" />
               +1
@@ -165,6 +170,9 @@ const formatShortTime = (ts: number) => {
               </div>
             </div>
             <div class="rp-task-right">
+              <button class="rp-goto-btn" @click.stop="emit('goToPlan', task.planId)" title="查看护理详情">
+                <ArrowRight :size="12" />
+              </button>
               <button
                 v-if="task.status !== 'completed'"
                 class="rp-delay-btn"
@@ -455,6 +463,28 @@ const formatShortTime = (ts: number) => {
   color: #FFA726;
   border-color: #FFCC80;
   background: #FFF8E1;
+}
+
+.rp-goto-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #FFE4EA;
+  border-radius: 6px;
+  background: #fff;
+  color: #C44569;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.rp-goto-btn:hover {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  color: #fff;
+  border-color: transparent;
 }
 
 .rp-more-link {

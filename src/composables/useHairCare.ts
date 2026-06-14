@@ -389,6 +389,43 @@ export function useHairCare() {
     }
   }
 
+  const editCarePlanAndRegenTasks = (
+    planId: string,
+    updates: Partial<Pick<HairCarePlan, 'goals' | 'washFrequencyDays' | 'colorRetouchWeeks' | 'trimBangsDate' | 'trimEndsDate' | 'note'>>,
+    outfit: Outfit
+  ) => {
+    const plan = carePlans.value.find((p) => p.id === planId)
+    if (!plan) return
+
+    const hs = hairstyles.find((h) => h.id === outfit.hairstyleId)
+    const clr = hairColors.find((c) => c.id === outfit.hairColorId)
+    const suggestions = generateCareSuggestions(
+      outfit.hairColorId,
+      hs?.length || 'medium',
+      outfit.bangsType,
+      hs?.name
+    )
+
+    const updatedPlan: HairCarePlan = {
+      ...plan,
+      ...updates,
+      autoSuggestions: suggestions.map((s) => `${s.title}｜${s.description}`),
+      updatedAt: Date.now(),
+    }
+    carePlans.value = updateCarePlan(updatedPlan)
+
+    const completedTaskIds = new Set(
+      careTasks.value
+        .filter((t) => t.planId === planId && t.status === 'completed')
+        .map((t) => t.id)
+    )
+    careTasks.value = careTasks.value.filter(
+      (t) => t.planId !== planId || completedTaskIds.has(t.id)
+    )
+
+    generateTasksForPlan(updatedPlan, clr?.name)
+  }
+
   const togglePlanActive = (id: string) => {
     const plan = carePlans.value.find((p) => p.id === id)
     if (plan) {
@@ -475,6 +512,7 @@ export function useHairCare() {
     createCarePlan,
     deleteCarePlan,
     editCarePlan,
+    editCarePlanAndRegenTasks,
     togglePlanActive,
     markTaskComplete,
     delayTask,

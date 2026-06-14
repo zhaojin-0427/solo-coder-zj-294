@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { X, Check, AlertCircle, Lightbulb, Info, Sparkles, User, BookOpen } from 'lucide-vue-next'
-import type { Outfit, CareGoal, CareSuggestion } from '@/types'
+import type { Outfit, CareGoal, CareSuggestion, HairCarePlan } from '@/types'
 import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
 import { useHairCare, generateCareSuggestions, careGoalOptions } from '@/composables/useHairCare'
@@ -10,15 +10,19 @@ import { useHairStyle } from '@/composables/useHairStyle'
 const props = defineProps<{
   visible: boolean
   outfit: Outfit | null
+  editPlan?: HairCarePlan | null
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'created', planId: string): void
+  (e: 'updated', planId: string): void
 }>()
 
-const { createCarePlan } = useHairCare()
+const { createCarePlan, editCarePlanAndRegenTasks } = useHairCare()
 const { portfolio, currentAppliedOutfit } = useHairStyle()
+
+const isEditMode = computed(() => !!props.editPlan)
 
 type PlanSource = 'current' | 'portfolio'
 const selectedSource = ref<PlanSource>('portfolio')
@@ -33,7 +37,13 @@ const trimEndsDateStr = ref('')
 const note = ref('')
 const submitting = ref(false)
 
+const editOutfit = computed<Outfit | null>(() => {
+  if (!props.editPlan) return null
+  return portfolio.value.find((o) => o.id === props.editPlan!.outfitId) || null
+})
+
 const activeOutfit = computed<Outfit | null>(() => {
+  if (isEditMode.value) return editOutfit.value
   if (selectedSource.value === 'current') {
     return currentAppliedOutfit.value
   }
@@ -71,16 +81,51 @@ const hasBangs = computed(() =>
   activeOutfit.value ? activeOutfit.value.bangsType !== 'none' : false
 )
 
+const resetDefaultsForOutfit = () => {
+  selectedGoals.value = []
+  washFrequencyDays.value = 3
+  colorRetouchWeeks.value = undefined
+  lastColorDateStr.value = ''
+  trimBangsDateStr.value = ''
+  trimEndsDateStr.value = ''
+
+  if (isDyedColor.value) {
+    selectedGoals.value.push('color-fix')
+    colorRetouchWeeks.value = 6
+  }
+  if (hasBangs.value) {
+    selectedGoals.value.push('bangs-care')
+  }
+  if (hairstyle.value?.length === 'long') {
+    selectedGoals.value.push('repair-frizz')
+  }
+}
+
 watch(
   () => props.visible,
   (v) => {
     if (v) {
-      selectedGoals.value = []
-      washFrequencyDays.value = 3
       note.value = ''
-      lastColorDateStr.value = ''
-      trimBangsDateStr.value = ''
-      trimEndsDateStr.value = ''
+
+      if (isEditMode.value && props.editPlan) {
+        const plan = props.editPlan
+        selectedSource.value = 'portfolio'
+        selectedPortfolioOutfitId.value = plan.outfitId
+        selectedGoals.value = [...plan.goals]
+        washFrequencyDays.value = plan.washFrequencyDays
+        colorRetouchWeeks.value = plan.colorRetouchWeeks
+        note.value = plan.note || ''
+        lastColorDateStr.value = plan.lastColorDate
+          ? new Date(plan.lastColorDate).toISOString().slice(0, 10)
+          : ''
+        trimBangsDateStr.value = plan.trimBangsDate
+          ? new Date(plan.trimBangsDate).toISOString().slice(0, 10)
+          : ''
+        trimEndsDateStr.value = plan.trimEndsDate
+          ? new Date(plan.trimEndsDate).toISOString().slice(0, 10)
+          : ''
+        return
+      }
 
       if (props.outfit) {
         selectedSource.value = 'portfolio'
@@ -92,17 +137,19 @@ watch(
         selectedPortfolioOutfitId.value = portfolio.value[0].id
       }
 
-      if (isDyedColor.value) {
-        selectedGoals.value.push('color-fix')
-        colorRetouchWeeks.value = 6
-      }
-      if (hasBangs.value) {
-        selectedGoals.value.push('bangs-care')
-      }
-      if (hairstyle.value?.length === 'long') {
-        selectedGoals.value.push('repair-frizz')
-      }
+      resetDefaultsForOutfit()
     }
+  }
+)
+
+watch(
+  activeOutfit,
+  (newOutfit, oldOutfit) => {
+    if (!props.visible) return
+    if (!newOutfit) return
+    if (newOutfit === oldOutfit) return
+    if (props.editPlan) return
+    resetDefaultsForOutfit()
   }
 )
 
@@ -124,6 +171,19 @@ const handleSubmit = () => {
   if (!activeOutfit.value) return
   submitting.value = true
   try {
+    if (isEditMode.value && props.editPlan) {
+      editCarePlanAndRegenTasks(props.editPlan.id, {
+        goals: selectedGoals.value,
+        washFrequencyDays: washFrequencyDays.value,
+        colorRetouchWeeks: selectedGoals.value.includes('color-fix') ? colorRetouchWeeks.value : undefined,
+        trimBangsDate: toTimestamp(trimBangsDateStr.value),
+        trimEndsDate: toTimestamp(trimEndsDateStr.value),
+        note: note.value,
+      }, activeOutfit.value)
+      emit('updated', props.editPlan.id)
+      emit('close')
+      return
+    }
     const plan = createCarePlan({
       outfit: activeOutfit.value,
       goals: selectedGoals.value,
@@ -160,7 +220,7 @@ const suggestionColor = (t: string) => {
         <div class="modal-header">
           <div class="modal-title-row">
             <Sparkles :size="20" class="title-icon" />
-            <h3 class="modal-title">创建护理计划</h3>
+            <h3 class="modal-title">{{ isEditMode ? '编辑护理计划' : '创建护理计划' }}</h3>
           </div>
           <button class="close-btn" @click="$emit('close')">
             <X :size="20" />
@@ -168,7 +228,7 @@ const suggestionColor = (t: string) => {
         </div>
 
         <div class="modal-body">
-          <div class="source-select-section">
+          <div v-if="!isEditMode" class="source-select-section">
             <div class="section-title">
               <Sparkles :size="16" />
               选择方案来源
@@ -374,7 +434,7 @@ const suggestionColor = (t: string) => {
             @click="handleSubmit"
           >
             <Check :size="16" />
-            {{ submitting ? '创建中...' : '创建护理计划' }}
+            {{ submitting ? (isEditMode ? '保存中...' : '创建中...') : (isEditMode ? '保存修改' : '创建护理计划') }}
           </button>
         </div>
       </div>

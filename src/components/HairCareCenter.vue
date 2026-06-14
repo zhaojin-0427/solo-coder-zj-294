@@ -13,6 +13,8 @@ import {
   Play,
   Heart,
   History,
+  Pencil,
+  Filter,
 } from 'lucide-vue-next'
 import type { HairCarePlan, CareTask, CareTaskStatus, CareGoal } from '@/types'
 import { useHairCare, careGoalOptions, careTaskTypeMeta } from '@/composables/useHairCare'
@@ -42,13 +44,16 @@ const {
 const selectedGoalFilter = ref<CareGoal | 'all'>('all')
 const selectedStatusFilter = ref<CareTaskStatus | 'all'>('all')
 const taskListViewMode = ref<'7days' | 'overdue' | 'completed'>('7days')
+const filterCurrentOutfit = ref(false)
 
-const { portfolio } = useHairStyle()
+const { portfolio, currentAppliedOutfit } = useHairStyle()
 
 const viewMode = ref<'upcoming' | 'all' | 'history'>('upcoming')
 const expandedPlanId = ref<string | null>(null)
 const showCreateModal = ref(false)
 const selectedOutfitForPlan = ref<any>(null)
+const showEditModal = ref(false)
+const editingPlan = ref<HairCarePlan | null>(null)
 
 const formatDate = (ts: number) => {
   const d = new Date(ts)
@@ -114,6 +119,9 @@ const openCreateWithActive = () => {
 
 const filteredCarePlans = computed(() => {
   let result = [...carePlans.value]
+  if (filterCurrentOutfit.value && currentAppliedOutfit.value) {
+    result = result.filter((p) => p.outfitId === currentAppliedOutfit.value!.id)
+  }
   if (selectedGoalFilter.value !== 'all') {
     result = result.filter((p) => p.goals.includes(selectedGoalFilter.value as CareGoal))
   }
@@ -135,6 +143,15 @@ const taskListSource = computed(() => {
 
 const displayedTasks = computed(() => {
   let result = taskListSource.value
+
+  if (filterCurrentOutfit.value && currentAppliedOutfit.value) {
+    const outfitPlanIds = new Set(
+      carePlans.value
+        .filter((p) => p.outfitId === currentAppliedOutfit.value!.id)
+        .map((p) => p.id)
+    )
+    result = result.filter((t) => outfitPlanIds.has(t.planId))
+  }
 
   if (selectedStatusFilter.value !== 'all') {
     result = result.filter((t) => t.status === selectedStatusFilter.value)
@@ -179,6 +196,17 @@ const handleDeletePlan = (plan: HairCarePlan) => {
 const handleDeleteTask = (taskId: string) => {
   if (confirm('确定要删除这个护理事项吗？')) {
     deleteTask(taskId)
+  }
+}
+
+const openEditPlan = (plan: HairCarePlan) => {
+  editingPlan.value = plan
+  showEditModal.value = true
+}
+
+const handleUpdatedPlan = () => {
+  if (editingPlan.value) {
+    expandedPlanId.value = editingPlan.value.id
   }
 }
 </script>
@@ -267,6 +295,19 @@ const handleDeleteTask = (taskId: string) => {
               {{ goal.icon }} {{ goal.name }}
             </button>
           </div>
+        </div>
+        <div class="filter-group">
+          <label class="filter-switch-label">
+            <Filter :size="14" />
+            <span>仅看当前应用方案</span>
+            <button
+              :class="['filter-switch', { active: filterCurrentOutfit }]"
+              @click="filterCurrentOutfit = !filterCurrentOutfit"
+              :disabled="!currentAppliedOutfit"
+            >
+              <span class="switch-thumb"></span>
+            </button>
+          </label>
         </div>
       </div>
 
@@ -381,6 +422,10 @@ const handleDeleteTask = (taskId: string) => {
           </div>
 
           <div class="plan-actions">
+            <button class="p-action" @click.stop="openEditPlan(plan)">
+              <Pencil :size="14" />
+              编辑
+            </button>
             <button class="p-action" @click.stop="togglePlanActive(plan.id)">
               <component :is="plan.active ? Pause : Play" :size="14" />
               {{ plan.active ? '暂停' : '恢复' }}
@@ -441,6 +486,19 @@ const handleDeleteTask = (taskId: string) => {
               {{ goal.icon }} {{ goal.name }}
             </button>
           </div>
+        </div>
+        <div class="filter-group">
+          <label class="filter-switch-label">
+            <Filter :size="14" />
+            <span>仅看当前应用方案</span>
+            <button
+              :class="['filter-switch', { active: filterCurrentOutfit }]"
+              @click="filterCurrentOutfit = !filterCurrentOutfit"
+              :disabled="!currentAppliedOutfit"
+            >
+              <span class="switch-thumb"></span>
+            </button>
+          </label>
         </div>
         <div v-if="taskListViewMode !== 'completed'" class="filter-group">
           <span class="filter-label">任务状态：</span>
@@ -547,6 +605,14 @@ const handleDeleteTask = (taskId: string) => {
       :outfit="selectedOutfitForPlan"
       @close="showCreateModal = false"
       @created="handleCreatedPlan"
+    />
+
+    <CarePlanModal
+      :visible="showEditModal"
+      :outfit="null"
+      :editPlan="editingPlan"
+      @close="showEditModal = false"
+      @updated="handleUpdatedPlan"
     />
   </div>
 </template>
@@ -1370,5 +1436,53 @@ const handleDeleteTask = (taskId: string) => {
     font-size: 11px;
     padding: 8px 10px;
   }
+}
+
+.filter-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8B5A6B;
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border: none;
+  border-radius: 10px;
+  background: #FFE4EA;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.filter-switch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.filter-switch.active {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.filter-switch.active .switch-thumb {
+  left: 18px;
 }
 </style>

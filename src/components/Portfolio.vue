@@ -16,13 +16,14 @@ import {
   GitCompare,
   HeartPulse,
   History,
+  Pencil,
 } from 'lucide-vue-next'
 import { useHairStyle } from '@/composables/useHairStyle'
 import { useHairCare, careGoalOptions, careTaskTypeMeta } from '@/composables/useHairCare'
 import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
 import { faceShapes } from '@/data/faceShapes'
-import type { OccasionTag, Outfit, Rating, SortType } from '@/types'
+import type { OccasionTag, Outfit, Rating, SortType, HairCarePlan } from '@/types'
 import CarePlanModal from '@/components/CarePlanModal.vue'
 
 const {
@@ -70,6 +71,8 @@ const sortOptions: { key: SortType; name: string; icon: any }[] = [
 const showCarePlanModal = ref(false)
 const selectedOutfitForCare = ref<Outfit | null>(null)
 const expandedHistoryOutfitId = ref<string | null>(null)
+const showEditPlanModal = ref(false)
+const editingPlan = ref<HairCarePlan | null>(null)
 
 const formatDate = (timestamp: number) => {
   const date = new Date(timestamp)
@@ -145,6 +148,11 @@ const openCreateCarePlan = (outfit: Outfit) => {
 const toggleHistory = (outfitId: string) => {
   expandedHistoryOutfitId.value =
     expandedHistoryOutfitId.value === outfitId ? null : outfitId
+}
+
+const openEditCarePlan = (plan: HairCarePlan) => {
+  editingPlan.value = plan
+  showEditPlanModal.value = true
 }
 
 const planGoalsDisplay = (outfitId: string) => {
@@ -343,10 +351,15 @@ const planGoalsDisplay = (outfitId: string) => {
 
           <div v-for="plan in plansByOutfit(outfit.id)" :key="plan.id" class="plan-block">
             <div class="plan-head">
-              <span :class="['plan-state', plan.active ? 'active' : 'inactive']">
-                {{ plan.active ? '进行中' : '已停用' }}
-              </span>
-              <span class="plan-created">{{ formatDate(plan.createdAt) }} 创建</span>
+              <div class="plan-head-left">
+                <span :class="['plan-state', plan.active ? 'active' : 'inactive']">
+                  {{ plan.active ? '进行中' : '已停用' }}
+                </span>
+                <span class="plan-created">{{ formatDate(plan.createdAt) }} 创建</span>
+              </div>
+              <button class="plan-edit-btn" @click="openEditCarePlan(plan)" title="编辑计划">
+                <Pencil :size="12" />
+              </button>
             </div>
             <ul class="plan-summary-ul">
               <li v-for="(line, i) in getPlanSummary(plan.id)" :key="i">
@@ -403,6 +416,13 @@ const planGoalsDisplay = (outfitId: string) => {
       :visible="showCarePlanModal"
       :outfit="selectedOutfitForCare"
       @close="showCarePlanModal = false"
+    />
+
+    <CarePlanModal
+      :visible="showEditPlanModal"
+      :outfit="null"
+      :editPlan="editingPlan"
+      @close="showEditPlanModal = false"
     />
   </div>
 </template>
@@ -941,6 +961,34 @@ const planGoalsDisplay = (outfitId: string) => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
+}
+
+.plan-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-edit-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #FFB6C1;
+  border-radius: 6px;
+  background: #fff;
+  color: #C44569;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.plan-edit-btn:hover {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  color: #fff;
+  border-color: transparent;
 }
 
 .plan-state {

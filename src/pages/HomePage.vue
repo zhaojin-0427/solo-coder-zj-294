@@ -60,6 +60,10 @@ const openCareCenterFromPanel = () => {
   activeMobileTab.value = 'care'
 }
 
+const goToPlanDetail = (planId: string) => {
+  activeMobileTab.value = 'care'
+}
+
 const openCarePlanForCurrent = () => {
   if (currentAppliedOutfit.value) {
     carePlanModalOutfit.value = currentAppliedOutfit.value
@@ -735,7 +739,10 @@ const handlePrint = async () => {
           </div>
 
           <div class="reminder-section">
-            <CareReminderPanel @openCenter="openCareCenterFromPanel" />
+            <CareReminderPanel
+              @openCenter="openCareCenterFromPanel"
+              @goToPlan="goToPlanDetail"
+            />
           </div>
 
           <div class="toolbar-section">
