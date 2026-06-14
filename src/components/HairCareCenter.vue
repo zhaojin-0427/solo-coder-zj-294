@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import {
   Bell,
   CalendarClock,
@@ -14,7 +14,7 @@ import {
   Heart,
   History,
 } from 'lucide-vue-next'
-import type { HairCarePlan, CareTask, CareTaskStatus } from '@/types'
+import type { HairCarePlan, CareTask, CareTaskStatus, CareGoal } from '@/types'
 import { useHairCare, careGoalOptions, careTaskTypeMeta } from '@/composables/useHairCare'
 import CarePlanModal from '@/components/CarePlanModal.vue'
 import { useHairStyle } from '@/composables/useHairStyle'
@@ -24,9 +24,11 @@ const {
   careTasks,
   activeCarePlans,
   pendingTasks,
+  upcoming7DaysTasks,
   overdueTasks,
   completedTasks,
   careTaskTypeMeta: taskMeta,
+  highlightedPlanId,
   plansByOutfit,
   tasksByPlan,
   markTaskComplete,
@@ -36,6 +38,10 @@ const {
   togglePlanActive,
   getPlanSummary,
 } = useHairCare()
+
+const selectedGoalFilter = ref<CareGoal | 'all'>('all')
+const selectedStatusFilter = ref<CareTaskStatus | 'all'>('all')
+const taskListViewMode = ref<'7days' | 'overdue' | 'completed'>('7days')
 
 const { portfolio } = useHairStyle()
 
@@ -87,7 +93,16 @@ const openCreateForOutfit = (outfit: any) => {
 }
 
 const handleCreatedPlan = () => {
-  expandedPlanId.value = carePlans.value[0]?.id || null
+  viewMode.value = 'all'
+  nextTick(() => {
+    if (highlightedPlanId.value) {
+      expandedPlanId.value = highlightedPlanId.value
+      const planEl = document.getElementById(`care-plan-${highlightedPlanId.value}`)
+      if (planEl) {
+        planEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }
+  })
 }
 
 const openCreateWithActive = () => {
@@ -97,17 +112,44 @@ const openCreateWithActive = () => {
   }
 }
 
-const displayedTasks = computed(() => {
-  switch (viewMode.value) {
-    case 'history':
-      return completedTasks.value.slice(0, 50)
-    case 'all':
-      return [...pendingTasks.value, ...completedTasks.value.slice(0, 30)].sort(
-        (a, b) => a.createdAt - b.createdAt
-      )
-    default:
-      return pendingTasks.value
+const filteredCarePlans = computed(() => {
+  let result = [...carePlans.value]
+  if (selectedGoalFilter.value !== 'all') {
+    result = result.filter((p) => p.goals.includes(selectedGoalFilter.value as CareGoal))
   }
+  return result.sort((a, b) => b.createdAt - a.createdAt)
+})
+
+const taskListSource = computed(() => {
+  switch (taskListViewMode.value) {
+    case '7days':
+      return upcoming7DaysTasks.value
+    case 'overdue':
+      return overdueTasks.value
+    case 'completed':
+      return completedTasks.value
+    default:
+      return upcoming7DaysTasks.value
+  }
+})
+
+const displayedTasks = computed(() => {
+  let result = taskListSource.value
+
+  if (selectedStatusFilter.value !== 'all') {
+    result = result.filter((t) => t.status === selectedStatusFilter.value)
+  }
+
+  if (selectedGoalFilter.value !== 'all') {
+    const planIds = new Set(
+      carePlans.value
+        .filter((p) => p.goals.includes(selectedGoalFilter.value as CareGoal))
+        .map((p) => p.id)
+    )
+    result = result.filter((t) => planIds.has(t.planId))
+  }
+
+  return result
 })
 
 const planGoalsDisplay = (plan: HairCarePlan) => {
@@ -206,7 +248,29 @@ const handleDeleteTask = (taskId: string) => {
     </div>
 
     <div v-if="viewMode === 'all'" class="cc-plans">
-      <div v-if="carePlans.length === 0" class="empty-block">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span class="filter-label">护理目标：</span>
+          <div class="filter-chips">
+            <button
+              :class="['filter-chip', { active: selectedGoalFilter === 'all' }]"
+              @click="selectedGoalFilter = 'all'"
+            >
+              全部
+            </button>
+            <button
+              v-for="goal in careGoalOptions"
+              :key="goal.key"
+              :class="['filter-chip', { active: selectedGoalFilter === goal.key }]"
+              @click="selectedGoalFilter = goal.key"
+            >
+              {{ goal.icon }} {{ goal.name }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="filteredCarePlans.length === 0" class="empty-block">
         <div class="empty-emoji">💆</div>
         <p class="empty-title">还没有护理计划</p>
         <p class="empty-desc">从作品集选择一个方案，为它创建专属护理计划吧</p>
@@ -226,10 +290,14 @@ const handleDeleteTask = (taskId: string) => {
       </div>
 
       <div
-        v-for="plan in carePlans"
+        v-for="plan in filteredCarePlans"
         :key="plan.id"
-        :class="['plan-card', { inactive: !plan.active }]"
+        :id="`care-plan-${plan.id}`"
+        :class="['plan-card', { inactive: !plan.active, highlighted: highlightedPlanId === plan.id }]"
       >
+        <div v-if="highlightedPlanId === plan.id" class="plan-highlight-tag">
+          ✨ 新建计划
+        </div>
         <div class="plan-header" @click="toggleExpand(plan.id)">
           <div class="plan-main">
             <div class="plan-name-row">
@@ -330,52 +398,74 @@ const handleDeleteTask = (taskId: string) => {
     </div>
 
     <div v-else class="cc-tasks">
-      <div v-if="viewMode === 'upcoming' && overdueTasks.length > 0" class="overdue-block">
-        <div class="ob-header">
-          <AlertTriangle :size="16" class="ob-icon" />
-          <span class="ob-title">已过期提醒（{{ overdueTasks.length }}）</span>
-        </div>
-        <div
-          v-for="task in overdueTasks.slice(0, 5)"
-          :key="task.id"
-          class="task-row overdue"
+      <div class="task-list-tabs">
+        <button
+          :class="['task-list-tab', { active: taskListViewMode === '7days' }]"
+          @click="taskListViewMode = '7days'"
         >
-          <button
-            class="task-check overdue-check"
-            @click="markTaskComplete(task.id)"
-            title="标记完成"
-          ></button>
-          <div class="task-type-col">
-            <span
-              class="task-ico"
-              :style="{ background: taskMeta[task.type]?.color + '22', color: taskMeta[task.type]?.color }"
+          <CalendarClock :size="14" />
+          未来7天 ({{ upcoming7DaysTasks.length }})
+        </button>
+        <button
+          :class="['task-list-tab', { active: taskListViewMode === 'overdue' }]"
+          @click="taskListViewMode = 'overdue'"
+        >
+          <AlertTriangle :size="14" />
+          已过期 ({{ overdueTasks.length }})
+        </button>
+        <button
+          :class="['task-list-tab', { active: taskListViewMode === 'completed' }]"
+          @click="taskListViewMode = 'completed'"
+        >
+          <Check :size="14" />
+          已完成 ({{ completedTasks.length }})
+        </button>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span class="filter-label">护理目标：</span>
+          <div class="filter-chips">
+            <button
+              :class="['filter-chip', { active: selectedGoalFilter === 'all' }]"
+              @click="selectedGoalFilter = 'all'"
             >
-              {{ taskMeta[task.type]?.icon }}
-            </span>
-          </div>
-          <div class="task-content">
-            <div class="task-title">{{ task.title }}</div>
-            <div class="task-sub">
-              <span class="task-plan-name">{{
-                carePlans.find(p => p.id === task.planId)?.outfitName || '未关联方案'
-              }}</span>
-              <span class="task-due overdue-due">已过期 · {{ getTaskDueDisplay(task) }}</span>
-            </div>
-          </div>
-          <div class="task-actions-col">
-            <button class="t-action delay" @click="delayTask(task.id, 1)" title="延期1天">
-              <Clock :size="14" />
-              +1天
+              全部
+            </button>
+            <button
+              v-for="goal in careGoalOptions"
+              :key="goal.key"
+              :class="['filter-chip', { active: selectedGoalFilter === goal.key }]"
+              @click="selectedGoalFilter = goal.key"
+            >
+              {{ goal.icon }} {{ goal.name }}
             </button>
           </div>
+        </div>
+        <div v-if="taskListViewMode !== 'completed'" class="filter-group">
+          <span class="filter-label">任务状态：</span>
+          <select
+            :value="selectedStatusFilter"
+            class="filter-select"
+            @change="(e) => selectedStatusFilter = (e.target as HTMLSelectElement).value as (CareTaskStatus | 'all')"
+          >
+            <option value="all">全部</option>
+            <option value="pending">待办</option>
+            <option value="delayed">已延期</option>
+            <option value="overdue">已过期</option>
+          </select>
         </div>
       </div>
 
       <div v-if="displayedTasks.length === 0" class="empty-block">
         <div class="empty-emoji">🌿</div>
-        <p class="empty-title">{{ viewMode === 'history' ? '还没有完成记录' : '近期没有待办护理' }}</p>
+        <p class="empty-title">{{
+          taskListViewMode === 'completed' ? '还没有完成记录' :
+          taskListViewMode === 'overdue' ? '没有已过期的护理' :
+          '近期没有待办护理'
+        }}</p>
         <p class="empty-desc">{{
-          viewMode === 'history'
+          taskListViewMode === 'completed'
             ? '完成护理事项后会出现在这里'
             : '创建护理计划后，事项将自动安排'
         }}</p>
@@ -425,7 +515,7 @@ const handleDeleteTask = (taskId: string) => {
         </div>
         <div class="task-actions-col">
           <button
-            v-if="task.status !== 'completed'"
+            v-if="taskListViewMode !== 'completed' && task.status !== 'completed'"
             class="t-action delay"
             @click="delayTask(task.id, 1)"
             title="延期1天"
@@ -434,7 +524,7 @@ const handleDeleteTask = (taskId: string) => {
             +1天
           </button>
           <button
-            v-if="task.status !== 'completed'"
+            v-if="taskListViewMode !== 'completed' && task.status !== 'completed'"
             class="t-action delay"
             @click="delayTask(task.id, 3)"
             title="延期3天"
@@ -1118,9 +1208,167 @@ const handleDeleteTask = (taskId: string) => {
   border-color: #EF9A9A;
 }
 
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: linear-gradient(135deg, #FFF5F8, #FFF8FA);
+  border: 1px solid #FFE4EA;
+  border-radius: 12px;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 12px;
+  color: #8B5A6B;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 4px 10px;
+  border: 1px solid #FFE4EA;
+  border-radius: 12px;
+  background: #fff;
+  color: #8B5A6B;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-chip:hover {
+  background: #FFF0F3;
+  border-color: #FFB6C1;
+}
+
+.filter-chip.active {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  color: #fff;
+  border-color: transparent;
+}
+
+.filter-select {
+  padding: 4px 10px;
+  border: 1px solid #FFB6C1;
+  border-radius: 10px;
+  background: #fff;
+  color: #5D4037;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.filter-select:focus {
+  border-color: #C44569;
+}
+
+.task-list-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: #FFF5F8;
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.task-list-tab {
+  flex: 1;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #8B5A6B;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.task-list-tab:hover {
+  background: #FFF0F3;
+}
+
+.task-list-tab.active {
+  background: linear-gradient(135deg, #FF6B9D, #C44569);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(196, 69, 105, 0.25);
+}
+
+.plan-card {
+  position: relative;
+}
+
+.plan-card.highlighted {
+  border-color: #FFD54F;
+  box-shadow: 0 0 0 3px rgba(255, 213, 79, 0.3), 0 8px 24px rgba(255, 213, 79, 0.2);
+  animation: pulse-highlight 2s ease-in-out infinite;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(255, 213, 79, 0.3), 0 8px 24px rgba(255, 213, 79, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 213, 79, 0.2), 0 8px 24px rgba(255, 213, 79, 0.3);
+  }
+}
+
+.plan-highlight-tag {
+  position: absolute;
+  top: -10px;
+  right: 16px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #FFD54F, #FFA726);
+  color: #5D4037;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(255, 167, 38, 0.4);
+  z-index: 1;
+}
+
 @media (max-width: 480px) {
   .cc-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    justify-content: flex-start;
+  }
+
+  .task-list-tabs {
+    flex-wrap: nowrap;
+  }
+
+  .task-list-tab {
+    font-size: 11px;
+    padding: 8px 10px;
   }
 }
 </style>

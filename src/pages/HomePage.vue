@@ -42,6 +42,19 @@ const activeMobileTab = ref<'hairstyle' | 'portfolio' | 'compare' | 'care'>('hai
 const showCarePlanModal = ref(false)
 const carePlanModalOutfit = ref<Outfit | null>(null)
 
+const showCompareGuide = ref(false)
+
+const handleCompareTabClick = () => {
+  if (selectedForCompareOutfits.value.length < 2) {
+    showCompareGuide.value = true
+    setTimeout(() => {
+      showCompareGuide.value = false
+    }, 3000)
+  } else {
+    setShowCompareView(true)
+  }
+}
+
 const careCenterPanelRef = ref<any>(null)
 const openCareCenterFromPanel = () => {
   activeMobileTab.value = 'care'
@@ -695,7 +708,7 @@ const handlePrint = async () => {
       </button>
       <button
         :class="['mobile-tab', { active: activeMobileTab === 'compare' }]"
-        @click="setShowCompareView(true)"
+        @click="handleCompareTabClick"
       >
         <GitCompare :size="16" />
         对比中心
@@ -759,6 +772,19 @@ const handlePrint = async () => {
       @close="showCarePlanModal = false"
       @created="handleCarePlanCreated"
     />
+
+    <Teleport to="body">
+      <Transition name="guide-fade">
+        <div v-if="showCompareGuide" class="compare-guide-toast">
+          <div class="guide-icon">💡</div>
+          <div class="guide-content">
+            <div class="guide-title">请先选择要对比的方案</div>
+            <div class="guide-desc">在「作品集」中勾选 2-3 个方案卡片，即可开启对比功能</div>
+          </div>
+          <button class="guide-close" @click="showCompareGuide = false">×</button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -946,5 +972,70 @@ const handlePrint = async () => {
     position: static;
     max-height: none;
   }
+}
+
+.compare-guide-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #fff 0%, #FFF5F8 100%);
+  border: 2px solid #FFB6C1;
+  border-radius: 16px;
+  padding: 20px 24px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  box-shadow: 0 12px 40px rgba(196, 69, 105, 0.25);
+  z-index: 3000;
+  max-width: 360px;
+}
+
+.guide-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.guide-content {
+  flex: 1;
+}
+
+.guide-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #C44569;
+  margin-bottom: 4px;
+}
+
+.guide-desc {
+  font-size: 13px;
+  color: #8B5A6B;
+  line-height: 1.5;
+}
+
+.guide-close {
+  background: none;
+  border: none;
+  color: #B88899;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.guide-close:hover {
+  color: #C44569;
+}
+
+.guide-fade-enter-active,
+.guide-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.guide-fade-enter-from,
+.guide-fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
 }
 </style>

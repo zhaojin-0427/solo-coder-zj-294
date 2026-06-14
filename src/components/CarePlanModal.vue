@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { X, Check, AlertCircle, Lightbulb, Info, Sparkles } from 'lucide-vue-next'
+import { X, Check, AlertCircle, Lightbulb, Info, Sparkles, User, BookOpen } from 'lucide-vue-next'
 import type { Outfit, CareGoal, CareSuggestion } from '@/types'
 import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
 import { useHairCare, generateCareSuggestions, careGoalOptions } from '@/composables/useHairCare'
+import { useHairStyle } from '@/composables/useHairStyle'
 
 const props = defineProps<{
   visible: boolean
@@ -17,6 +18,11 @@ const emit = defineEmits<{
 }>()
 
 const { createCarePlan } = useHairCare()
+const { portfolio, currentAppliedOutfit } = useHairStyle()
+
+type PlanSource = 'current' | 'portfolio'
+const selectedSource = ref<PlanSource>('portfolio')
+const selectedPortfolioOutfitId = ref<string>('')
 
 const selectedGoals = ref<CareGoal[]>([])
 const washFrequencyDays = ref(3)
@@ -27,44 +33,64 @@ const trimEndsDateStr = ref('')
 const note = ref('')
 const submitting = ref(false)
 
+const activeOutfit = computed<Outfit | null>(() => {
+  if (selectedSource.value === 'current') {
+    return currentAppliedOutfit.value
+  }
+  if (selectedSource.value === 'portfolio' && selectedPortfolioOutfitId.value) {
+    return portfolio.value.find((o) => o.id === selectedPortfolioOutfitId.value) || null
+  }
+  return props.outfit
+})
+
 const hairstyle = computed(() =>
-  props.outfit ? hairstyles.find((h) => h.id === props.outfit!.hairstyleId) : undefined
+  activeOutfit.value ? hairstyles.find((h) => h.id === activeOutfit.value!.hairstyleId) : undefined
 )
 const hairColor = computed(() =>
-  props.outfit ? hairColors.find((c) => c.id === props.outfit!.hairColorId) : undefined
+  activeOutfit.value ? hairColors.find((c) => c.id === activeOutfit.value!.hairColorId) : undefined
 )
 const bangsName = computed(() =>
-  props.outfit ? bangsOptions.find((b) => b.type === props.outfit!.bangsType)?.name : undefined
+  activeOutfit.value ? bangsOptions.find((b) => b.type === activeOutfit.value!.bangsType)?.name : undefined
 )
 
 const suggestions = computed<CareSuggestion[]>(() => {
-  if (!props.outfit) return []
+  if (!activeOutfit.value) return []
   return generateCareSuggestions(
-    props.outfit.hairColorId,
+    activeOutfit.value.hairColorId,
     hairstyle.value?.length || 'medium',
-    props.outfit.bangsType,
+    activeOutfit.value.bangsType,
     hairstyle.value?.name
   )
 })
 
 const isDyedColor = computed(() =>
-  props.outfit ? ['rose-red', 'blue-black', 'linen'].includes(props.outfit.hairColorId) : false
+  activeOutfit.value ? ['rose-red', 'blue-black', 'linen'].includes(activeOutfit.value.hairColorId) : false
 )
 
 const hasBangs = computed(() =>
-  props.outfit ? props.outfit.bangsType !== 'none' : false
+  activeOutfit.value ? activeOutfit.value.bangsType !== 'none' : false
 )
 
 watch(
   () => props.visible,
   (v) => {
-    if (v && props.outfit) {
+    if (v) {
       selectedGoals.value = []
       washFrequencyDays.value = 3
       note.value = ''
       lastColorDateStr.value = ''
       trimBangsDateStr.value = ''
       trimEndsDateStr.value = ''
+
+      if (props.outfit) {
+        selectedSource.value = 'portfolio'
+        selectedPortfolioOutfitId.value = props.outfit.id
+      } else if (currentAppliedOutfit.value) {
+        selectedSource.value = 'current'
+      } else if (portfolio.value.length > 0) {
+        selectedSource.value = 'portfolio'
+        selectedPortfolioOutfitId.value = portfolio.value[0].id
+      }
 
       if (isDyedColor.value) {
         selectedGoals.value.push('color-fix')
@@ -95,11 +121,11 @@ const toggleGoal = (g: CareGoal) => {
 }
 
 const handleSubmit = () => {
-  if (!props.outfit) return
+  if (!activeOutfit.value) return
   submitting.value = true
   try {
     const plan = createCarePlan({
-      outfit: props.outfit,
+      outfit: activeOutfit.value,
       goals: selectedGoals.value,
       washFrequencyDays: washFrequencyDays.value,
       colorRetouchWeeks: selectedGoals.value.includes('color-fix') ? colorRetouchWeeks.value : undefined,
@@ -141,10 +167,51 @@ const suggestionColor = (t: string) => {
           </button>
         </div>
 
-        <div v-if="outfit" class="modal-body">
-          <div class="outfit-ref-card">
+        <div class="modal-body">
+          <div class="source-select-section">
+            <div class="section-title">
+              <Sparkles :size="16" />
+              选择方案来源
+            </div>
+            <div class="source-tabs">
+              <button
+                :class="['source-tab', { active: selectedSource === 'current', disabled: !currentAppliedOutfit }]"
+                :disabled="!currentAppliedOutfit"
+                @click="selectedSource = 'current'"
+              >
+                <User :size="16" />
+                <span>当前应用方案</span>
+                <span v-if="!currentAppliedOutfit" class="tab-disabled-tip">(未应用)</span>
+              </button>
+              <button
+                :class="['source-tab', { active: selectedSource === 'portfolio', disabled: portfolio.length === 0 }]"
+                :disabled="portfolio.length === 0"
+                @click="selectedSource = 'portfolio'"
+              >
+                <BookOpen :size="16" />
+                <span>作品集方案</span>
+              </button>
+            </div>
+
+            <div v-if="selectedSource === 'portfolio' && portfolio.length > 0" class="portfolio-picker">
+              <select
+                v-model="selectedPortfolioOutfitId"
+                class="portfolio-select"
+              >
+                <option
+                  v-for="outfit in portfolio"
+                  :key="outfit.id"
+                  :value="outfit.id"
+                >
+                  {{ outfit.name }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div v-if="activeOutfit" class="outfit-ref-card">
             <div class="ref-title">关联方案</div>
-            <div class="ref-name">{{ outfit.name }}</div>
+            <div class="ref-name">{{ activeOutfit.name }}</div>
             <div class="ref-meta">
               <span>{{ hairstyle?.name || '未知发型' }}</span>
               <span>·</span>
@@ -258,7 +325,7 @@ const suggestionColor = (t: string) => {
             </div>
           </div>
 
-          <div v-if="hasBangs" class="section">
+          <div v-if="activeOutfit && hasBangs" class="section">
             <div class="section-title">修剪提醒日期</div>
             <div class="date-row">
               <label class="date-label">下次修剪刘海</label>
@@ -268,6 +335,12 @@ const suggestionColor = (t: string) => {
                 class="date-input"
               />
             </div>
+          </div>
+
+          <div v-if="!activeOutfit" class="empty-selection">
+            <div class="empty-icon">💇</div>
+            <div class="empty-title">请先选择一个方案</div>
+            <div class="empty-desc">从上方选择「当前应用方案」或「作品集方案」来创建护理计划</div>
           </div>
 
           <div class="section">
@@ -297,7 +370,7 @@ const suggestionColor = (t: string) => {
           <button class="btn-cancel" @click="$emit('close')">取消</button>
           <button
             class="btn-primary"
-            :disabled="submitting"
+            :disabled="submitting || !activeOutfit"
             @click="handleSubmit"
           >
             <Check :size="16" />
@@ -698,8 +771,113 @@ const suggestionColor = (t: string) => {
   cursor: not-allowed;
 }
 
+.source-select-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #FFF5F8, #FFF8FA);
+  border: 1px solid #FFE4EA;
+  border-radius: 14px;
+}
+
+.source-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.source-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 16px;
+  border: 2px solid #FFE4EA;
+  border-radius: 12px;
+  background: #fff;
+  color: #8B5A6B;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.source-tab:hover:not(.disabled) {
+  border-color: #FFB6C1;
+  background: #FFF0F3;
+}
+
+.source-tab.active {
+  border-color: #C44569;
+  background: linear-gradient(135deg, #FFF0F3, #FFE4EA);
+  color: #C44569;
+  box-shadow: 0 2px 8px rgba(196, 69, 105, 0.15);
+}
+
+.source-tab.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tab-disabled-tip {
+  font-size: 11px;
+  color: #B88899;
+}
+
+.portfolio-picker {
+  margin-top: 8px;
+}
+
+.portfolio-select {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #FFB6C1;
+  border-radius: 10px;
+  background: #fff;
+  color: #5D4037;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+.portfolio-select:focus {
+  border-color: #C44569;
+  box-shadow: 0 0 0 3px rgba(196, 69, 105, 0.1);
+}
+
+.empty-selection {
+  text-align: center;
+  padding: 40px 20px;
+  background: #FFF8FA;
+  border: 1px dashed #FFB6C1;
+  border-radius: 14px;
+  margin-top: 20px;
+}
+
+.empty-selection .empty-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.empty-selection .empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #5D4037;
+  margin-bottom: 6px;
+}
+
+.empty-selection .empty-desc {
+  font-size: 12px;
+  color: #8B5A6B;
+  line-height: 1.5;
+}
+
 @media (max-width: 640px) {
   .goal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .source-tabs {
     grid-template-columns: 1fr;
   }
 }

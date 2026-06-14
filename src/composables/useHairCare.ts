@@ -30,6 +30,7 @@ import { hairColors } from '@/data/hairColors'
 
 const carePlans = ref<HairCarePlan[]>(loadCarePlans())
 const careTasks = ref<CareTask[]>(loadCareTasks())
+const highlightedPlanId = ref<string | null>(null)
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const WEEK_MS = 7 * DAY_MS
@@ -368,6 +369,10 @@ export function useHairCare() {
 
     carePlans.value = addCarePlan(plan)
     generateTasksForPlan(plan, clr?.name)
+    highlightedPlanId.value = plan.id
+    setTimeout(() => {
+      highlightedPlanId.value = null
+    }, 5000)
     return plan
   }
 
@@ -448,6 +453,10 @@ export function useHairCare() {
     return lines
   }
 
+  const clearHighlight = () => {
+    highlightedPlanId.value = null
+  }
+
   return {
     carePlans,
     careTasks,
@@ -458,6 +467,7 @@ export function useHairCare() {
     completedTasks,
     careGoalOptions,
     careTaskTypeMeta,
+    highlightedPlanId,
     plansByOutfit,
     tasksByPlan,
     tasksByOutfit,
@@ -473,5 +483,6 @@ export function useHairCare() {
     generateCareSuggestions,
     getPlanSummary,
     refreshStatuses,
+    clearHighlight,
   }
 }
