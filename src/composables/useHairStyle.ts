@@ -3,7 +3,7 @@ import type { Hairstyle, HairColor, FaceShapeType, BangsType, Outfit, OccasionTa
 import { hairstyles, getRecommendedHairstyles } from '@/data/hairstyles'
 import { hairColors, defaultHairColor } from '@/data/hairColors'
 import { faceShapes } from '@/data/faceShapes'
-import { loadPortfolio, addOutfit, removeOutfit, generateId } from '@/utils/storage'
+import { loadPortfolio, addOutfit, removeOutfit, generateId, getCarePlansByOutfitId, removeCarePlan } from '@/utils/storage'
 
 const portraitImage = ref<string | null>(null)
 const selectedFaceShape = ref<FaceShapeType>('oval')
@@ -75,6 +75,8 @@ export function useHairStyle() {
   }
 
   const deleteFromPortfolio = (id: string) => {
+    const plans = getCarePlansByOutfitId(id)
+    plans.forEach((plan) => removeCarePlan(plan.id))
     portfolio.value = removeOutfit(id)
     toggleCompareSelect(id, false)
   }

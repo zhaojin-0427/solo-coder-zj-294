@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Sparkles, Scissors, BookOpen } from 'lucide-vue-next'
+import { ref, computed } from 'vue'
+import { Sparkles, Scissors, BookOpen, Bell, GitCompare } from 'lucide-vue-next'
 import FaceCanvas from '@/components/FaceCanvas.vue'
 import HairLibrary from '@/components/HairLibrary.vue'
 import ColorPanel from '@/components/ColorPanel.vue'
 import Portfolio from '@/components/Portfolio.vue'
 import Toolbar from '@/components/Toolbar.vue'
 import CompareView from '@/components/CompareView.vue'
+import CareReminderPanel from '@/components/CareReminderPanel.vue'
+import HairCareCenter from '@/components/HairCareCenter.vue'
+import CarePlanModal from '@/components/CarePlanModal.vue'
 import { useHairStyle } from '@/composables/useHairStyle'
+import { useHairCare, careGoalOptions } from '@/composables/useHairCare'
 import { hairstyles, bangsOptions } from '@/data/hairstyles'
 import { hairColors } from '@/data/hairColors'
 import { faceShapeMap } from '@/data/faceShapes'
@@ -24,9 +28,40 @@ const {
   selectedForCompareOutfits,
   setShowCompareView,
   currentAppliedOutfit,
+  portfolio,
 } = useHairStyle()
 
-const activeMobileTab = ref<'hairstyle' | 'portfolio'>('hairstyle')
+const {
+  carePlans,
+  plansByOutfit,
+  getPlanSummary,
+} = useHairCare()
+
+const activeMobileTab = ref<'hairstyle' | 'portfolio' | 'compare' | 'care'>('hairstyle')
+
+const showCarePlanModal = ref(false)
+const carePlanModalOutfit = ref<Outfit | null>(null)
+
+const careCenterPanelRef = ref<any>(null)
+const openCareCenterFromPanel = () => {
+  activeMobileTab.value = 'care'
+}
+
+const openCarePlanForCurrent = () => {
+  if (currentAppliedOutfit.value) {
+    carePlanModalOutfit.value = currentAppliedOutfit.value
+    showCarePlanModal.value = true
+  }
+}
+
+const handleCarePlanCreated = () => {
+  activeMobileTab.value = 'care'
+}
+
+const activePlanForCurrent = computed(() => {
+  if (!currentAppliedOutfit.value) return null
+  return plansByOutfit(currentAppliedOutfit.value.id).find((p) => p.active) || null
+})
 
 const formatDate = (timestamp: number) => {
   const date = new Date(timestamp)
@@ -44,7 +79,11 @@ const handleSave = async (data: { name: string; tags: OccasionTag[]; note?: stri
   if (canvas) {
     previewImage = canvas.toDataURL('image/png')
   }
-  saveToPortfolio(data.name, data.tags, previewImage, data.note, data.rating)
+  const outfit = saveToPortfolio(data.name, data.tags, previewImage, data.note, data.rating)
+  if (outfit && confirm('搭配已保存！是否为该方案创建专属护理计划？')) {
+    carePlanModalOutfit.value = outfit
+    showCarePlanModal.value = true
+  }
 }
 
 const loadImage = (src: string): Promise<HTMLImageElement> => {
@@ -119,12 +158,18 @@ const handleExportCurrent = async () => {
   const { originalDataUrl, resultDataUrl } = await faceCanvasRef.value?.getBothCanvases() || {}
   if (!originalDataUrl || !resultDataUrl) return
 
+  const planSummaryLines: string[] = activePlanForCurrent.value
+    ? getPlanSummary(activePlanForCurrent.value.id)
+    : []
+
+  const extraHeight = planSummaryLines.length > 0 ? 30 + planSummaryLines.length * 22 : 0
+
   const exportCanvas = document.createElement('canvas')
   const ctx = exportCanvas.getContext('2d')
   if (!ctx) return
 
   const width = resultCanvas.width * 2 + 60
-  const height = resultCanvas.height + 140
+  const height = resultCanvas.height + 140 + extraHeight
   exportCanvas.width = width
   exportCanvas.height = height
 
@@ -157,10 +202,51 @@ const handleExportCurrent = async () => {
   ctx.font = '14px sans-serif'
   const infoText = `发型：${selectedHairstyle.value?.name || '未选择'} | 发色：${selectedHairColor.value?.name || '未选择'} | 刘海：${bangsOptions.find(b => b.type === selectedBangs.value)?.name || '无'}`
   ctx.textAlign = 'center'
-  ctx.fillText(infoText, width / 2, height - 65)
+  const infoY = resultCanvas.height + 75
+  ctx.fillText(infoText, width / 2, infoY)
+
+  let currentY = infoY + 28
+
+  if (planSummaryLines.length > 0) {
+    ctx.fillStyle = '#fff'
+    ctx.strokeStyle = '#FFB6C1'
+    ctx.lineWidth = 2
+    const boxX = 40
+    const boxY = currentY
+    const boxW = width - 80
+    const boxH = 20 + planSummaryLines.length * 22
+    const boxR = 12
+    ctx.beginPath()
+    ctx.moveTo(boxX + boxR, boxY)
+    ctx.lineTo(boxX + boxW - boxR, boxY)
+    ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + boxR)
+    ctx.lineTo(boxX + boxW, boxY + boxH - boxR)
+    ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - boxR, boxY + boxH)
+    ctx.lineTo(boxX + boxR, boxY + boxH)
+    ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - boxR)
+    ctx.lineTo(boxX, boxY + boxR)
+    ctx.quadraticCurveTo(boxX, boxY, boxX + boxR, boxY)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+
+    ctx.fillStyle = '#C44569'
+    ctx.font = 'bold 13px sans-serif'
+    ctx.textAlign = 'left'
+    ctx.fillText('🌸 护理计划摘要', boxX + 16, boxY + 24)
+
+    ctx.fillStyle = '#5D4037'
+    ctx.font = '12px sans-serif'
+    planSummaryLines.forEach((line, i) => {
+      ctx.fillText('· ' + line, boxX + 20, boxY + 48 + i * 22)
+    })
+    currentY = boxY + boxH + 16
+  }
+
   ctx.fillStyle = '#B88899'
   ctx.font = '12px sans-serif'
-  ctx.fillText(`生成时间：${new Date().toLocaleString('zh-CN')}`, width / 2, height - 35)
+  ctx.textAlign = 'center'
+  ctx.fillText(`生成时间：${new Date().toLocaleString('zh-CN')}`, width / 2, height - 20)
 
   const link = document.createElement('a')
   link.download = `发型方案_${Date.now()}.png`
@@ -173,7 +259,7 @@ const handleExportCompare = async () => {
   if (outfits.length < 2) return
 
   const cardWidth = 320
-  const cardHeight = 620
+  const cardHeight = 700
   const padding = 24
   const gap = 20
   const headerHeight = 80
@@ -288,12 +374,54 @@ const handleExportCompare = async () => {
       contentY += 28
     }
 
+    const outfitPlan = plansByOutfit(outfit.id).find((p) => p.active)
+    if (outfitPlan) {
+      const summaryLines = getPlanSummary(outfitPlan.id).slice(0, 3)
+      if (summaryLines.length > 0) {
+        ctx.save()
+        ctx.fillStyle = '#FFF5F8'
+        ctx.strokeStyle = '#FFB6C1'
+        ctx.lineWidth = 1
+        const boxX = x + 14
+        const boxY = contentY
+        const boxW = cardWidth - 28
+        const boxH = 16 + summaryLines.length * 18
+        const r = 10
+        ctx.beginPath()
+        ctx.moveTo(boxX + r, boxY)
+        ctx.lineTo(boxX + boxW - r, boxY)
+        ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + r)
+        ctx.lineTo(boxX + boxW, boxY + boxH - r)
+        ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - r, boxY + boxH)
+        ctx.lineTo(boxX + r, boxY + boxH)
+        ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - r)
+        ctx.lineTo(boxX, boxY + r)
+        ctx.quadraticCurveTo(boxX, boxY, boxX + r, boxY)
+        ctx.closePath()
+        ctx.fill()
+        ctx.stroke()
+        ctx.restore()
+
+        ctx.fillStyle = '#C44569'
+        ctx.font = 'bold 11px sans-serif'
+        ctx.textAlign = 'left'
+        ctx.fillText('🌸 护理摘要', boxX + 10, boxY + 18)
+
+        ctx.fillStyle = '#6B4452'
+        ctx.font = '11px sans-serif'
+        summaryLines.forEach((line, idx) => {
+          ctx.fillText('· ' + line, boxX + 12, boxY + 36 + idx * 18)
+        })
+        contentY = boxY + boxH + 10
+      }
+    }
+
     ctx.fillStyle = '#B88899'
     ctx.font = '11px sans-serif'
     ctx.fillText(`保存时间：${formatDate(outfit.createdAt)}`, x + 16, contentY)
     contentY += 20
 
-    if (outfit.note) {
+    if (outfit.note && contentY < y + cardHeight - 30) {
       ctx.fillStyle = '#6B4452'
       ctx.font = '12px sans-serif'
       ctx.fillText('备注：', x + 16, contentY)
@@ -313,7 +441,7 @@ const handleExportCompare = async () => {
           line = testLine
         }
       }
-      if (line) ctx.fillText(line, x + 16, contentY)
+      if (line && contentY <= y + cardHeight - 30) ctx.fillText(line, x + 16, contentY)
     }
   }
 
@@ -348,6 +476,10 @@ const handlePrint = async () => {
   const ratingText = currentAppliedOutfit.value?.rating
     ? renderStars(currentAppliedOutfit.value.rating)
     : '未评分'
+
+  const planSummaryLines: string[] = activePlanForCurrent.value
+    ? getPlanSummary(activePlanForCurrent.value.id)
+    : []
 
   printWindow.document.write(`
     <!DOCTYPE html>
@@ -438,6 +570,32 @@ const handlePrint = async () => {
           white-space: pre-wrap;
           word-break: break-word;
         }
+        .care-section {
+          margin-top: 16px;
+          background: linear-gradient(135deg, #FFF5F8, #fff);
+          border: 1px solid #FFB6C1;
+          border-radius: 12px;
+          padding: 16px;
+        }
+        .care-label {
+          color: #C44569;
+          font-size: 13px;
+          font-weight: 600;
+          margin-bottom: 10px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .care-item {
+          color: #5D4037;
+          font-size: 12px;
+          padding: 5px 0;
+          padding-left: 10px;
+          border-left: 3px solid #FFB6C1;
+          margin-left: 4px;
+          margin-bottom: 6px;
+          line-height: 1.5;
+        }
         .card-footer {
           padding: 20px 24px;
           text-align: center;
@@ -486,6 +644,12 @@ const handlePrint = async () => {
               <div class="note-content">${noteText}</div>
             </div>
           ` : ''}
+          ${planSummaryLines.length > 0 ? `
+            <div class="care-section">
+              <div class="care-label">🌸 护理计划摘要</div>
+              ${planSummaryLines.map(line => `<div class="care-item">${line}</div>`).join('')}
+            </div>
+          ` : ''}
         </div>
         <div class="card-footer">
           生成时间：${new Date().toLocaleString('zh-CN')}
@@ -529,6 +693,20 @@ const handlePrint = async () => {
         <BookOpen :size="16" />
         作品集
       </button>
+      <button
+        :class="['mobile-tab', { active: activeMobileTab === 'compare' }]"
+        @click="setShowCompareView(true)"
+      >
+        <GitCompare :size="16" />
+        对比中心
+      </button>
+      <button
+        :class="['mobile-tab', { active: activeMobileTab === 'care' }]"
+        @click="activeMobileTab = 'care'"
+      >
+        <Bell :size="16" />
+        提醒中心
+      </button>
     </div>
 
     <main class="main-content">
@@ -542,6 +720,11 @@ const handlePrint = async () => {
           <div class="color-section">
             <ColorPanel />
           </div>
+
+          <div class="reminder-section">
+            <CareReminderPanel @openCenter="openCareCenterFromPanel" />
+          </div>
+
           <div class="toolbar-section">
             <Toolbar
               @save="handleSave"
@@ -551,8 +734,16 @@ const handlePrint = async () => {
           </div>
         </section>
 
-        <aside class="right-panel" :class="{ 'mobile-visible': activeMobileTab === 'portfolio' }">
-          <Portfolio />
+        <aside class="right-panel" :class="{ 'mobile-visible': activeMobileTab === 'care' || activeMobileTab === 'portfolio' }">
+          <div v-show="activeMobileTab === 'portfolio'" class="right-tab-content">
+            <Portfolio />
+          </div>
+          <div v-show="activeMobileTab === 'care'" ref="careCenterPanelRef" class="right-tab-content">
+            <HairCareCenter />
+          </div>
+          <div v-if="activeMobileTab !== 'portfolio' && activeMobileTab !== 'care'" class="right-tab-content">
+            <Portfolio />
+          </div>
         </aside>
       </div>
     </main>
@@ -562,6 +753,12 @@ const handlePrint = async () => {
     </footer>
 
     <CompareView v-if="showCompareView" @close="setShowCompareView(false)" />
+    <CarePlanModal
+      :visible="showCarePlanModal"
+      :outfit="carePlanModalOutfit"
+      @close="showCarePlanModal = false"
+      @created="handleCarePlanCreated"
+    />
   </div>
 </template>
 
@@ -615,13 +812,14 @@ const handlePrint = async () => {
   justify-content: center;
   gap: 8px;
   padding: 0 24px 16px;
+  flex-wrap: wrap;
 }
 
 .mobile-tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 24px;
+  padding: 10px 20px;
   border: 1px solid #FFB6C1;
   border-radius: 20px;
   background: #fff;
@@ -644,14 +842,14 @@ const handlePrint = async () => {
 }
 
 .main-content {
-  max-width: 1400px;
+  max-width: 1500px;
   margin: 0 auto;
   padding: 0 24px 40px;
 }
 
 .layout-grid {
   display: grid;
-  grid-template-columns: 320px 1fr 320px;
+  grid-template-columns: 320px 1fr 360px;
   gap: 24px;
   align-items: start;
 }
@@ -660,6 +858,12 @@ const handlePrint = async () => {
 .right-panel {
   position: sticky;
   top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.right-tab-content {
+  height: 100%;
   max-height: calc(100vh - 48px);
   overflow: hidden;
 }
@@ -676,6 +880,11 @@ const handlePrint = async () => {
   max-width: 460px;
 }
 
+.reminder-section {
+  width: 100%;
+  max-width: 540px;
+}
+
 .toolbar-section {
   width: 100%;
   max-width: 500px;
@@ -687,6 +896,12 @@ const handlePrint = async () => {
   text-align: center;
   color: #B88899;
   font-size: 12px;
+}
+
+@media (max-width: 1280px) {
+  .layout-grid {
+    grid-template-columns: 280px 1fr 320px;
+  }
 }
 
 @media (max-width: 1200px) {
